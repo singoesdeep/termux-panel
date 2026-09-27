@@ -1,0 +1,9 @@
+{
+  "name": "Termux Panel",
+  "short_name": "Termux",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111110",
+  "theme_color": "#111110",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
