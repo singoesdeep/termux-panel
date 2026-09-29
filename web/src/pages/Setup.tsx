@@ -15,6 +15,7 @@ export interface SetupItem {
   actionLabel?: string;
   hasAction: boolean;
   inBulk?: boolean;
+  help?: string;
 }
 export interface SetupInfo {
   isTermux: boolean;
@@ -88,6 +89,14 @@ export default function Setup() {
                       <div className="faint" style={{ fontSize: 12.5, marginTop: 4 }}>
                         {i.detail}
                       </div>
+                    )}
+                    {i.help && (
+                      <details style={{ marginTop: 8 }} open={i.status !== 'ok'}>
+                        <summary style={{ cursor: 'pointer', fontSize: 13.5 }}>Nasıl yapılır?</summary>
+                        <pre className="job-output" style={{ marginTop: 8, whiteSpace: 'pre-wrap', userSelect: 'text' }}>
+                          {i.help}
+                        </pre>
+                      </details>
                     )}
                   </div>
                   {i.hasAction && i.status !== 'ok' && (

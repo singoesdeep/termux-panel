@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { resolvePath } from '../env.js';
 import { HttpError, run } from '../exec.js';
 import { startJob } from '../jobs.js';
-import { NAME_RE, PD_BIN, PD_ROOT, killPd, listDistros, listSessions, pdStatus } from '../targets.js';
+import { NAME_RE, PD_BIN, PD_ROOT, activeBinds, killPd, listDistros, listSessions, pdStatus } from '../targets.js';
 import { terminalPids } from '../terminal.js';
 
 // Docker/OCI imaj referansı: "ubuntu:24.04", "ghcr.io/org/img:tag", v4 için düz takma ad
@@ -28,7 +28,7 @@ export default async function distroRoutes(app: FastifyInstance) {
     const st = pdStatus();
     const [distros, sessions] = await Promise.all([listDistros(), listSessions()]);
     const panel = terminalPids();
-    return { ...st, root: PD_ROOT, distros, sessions: sessions.map((s) => ({ ...s, panelTerminal: panel.get(s.pid) ?? null })) };
+    return { ...st, root: PD_ROOT, binds: activeBinds(), distros, sessions: sessions.map((s) => ({ ...s, panelTerminal: panel.get(s.pid) ?? null })) };
   });
 
   app.get<{ Params: { name: string } }>('/api/distros/:name/size', async (req) => {

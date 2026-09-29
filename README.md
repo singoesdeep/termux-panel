@@ -19,6 +19,7 @@ Varsayılan olarak yalnızca `127.0.0.1` adresini dinler ve token ile giriş ist
 | **Kısayollar** | Sık kullanılan komutları kaydet, tek dokunuşla arka planda ya da terminalde çalıştır. Her kısayol Termux'ta ya da bir distroda çalışabilir |
 | **Distrolar** | proot-distro: kurulu distrolar, imaj arayıp kurma, yedekle / geri yükle, sıfırla, yeniden adlandır, kaldır, çalışan oturumları görme ve kapatma |
 | **Cihaz** | Termux:API: pil, Wi-Fi, fener, titreşim, toast, bildirim, pano, TTS, parlaklık, konum, wake lock |
+| **Claude** | `claude rc` (Remote Control) servisi: distro / klasör seçimi, başlat-durdur, oturum bağlantısı, canlı log |
 | **İşler** | Panelden başlatılan tüm uzun komutlar ve çıktıları |
 
 ## Kurulum (sıfırdan Termux)
@@ -55,7 +56,38 @@ Panel Termux'ta çalışırken kurulu proot-distro container'larını otomatik b
 - **Kısayollar:** Her kısayolun çalışacağı ortam seçilebilir. Örnek: ortamı `debian`, komutu `claude rc` olan bir kısayol.
 - **Dosyalar:** *Konumlar* menüsünde her distronun `/root` klasörü ve kökü var. Bir distronun içindeki klasördeyken "Burada terminal aç" ve betik çalıştırma o distronun içinde çalışır.
 
-Komutlar `proot-distro login <ad> --work-dir <klasör> -- <komut>` ile çalıştırılır. Bir distro terminal sekmesi kapatıldığında oturumun tüm süreç ağacı `proot-distro kill` ile kapatılır. Distrolar sayfasındaki **Durdur**, o distronun bütün oturumlarını kapatır. Kurulu paket listesi dpkg veritabanından doğrudan okunur, bu yüzden hızlıdır. proot-distro bir proot içinden çalıştırılamadığı için, panel proot içinde çalışırken distro yönetimi kapalıdır.
+Komutlar `proot-distro login <ad> --bind … --work-dir <klasör> -- <komut>` ile çalıştırılır. Bir distro terminal sekmesi kapatıldığında oturumun tüm süreç ağacı `proot-distro kill` ile kapatılır. Distrolar sayfasındaki **Durdur**, o distronun bütün oturumlarını kapatır. Kurulu paket listesi dpkg veritabanından doğrudan okunur, bu yüzden hızlıdır. proot-distro bir proot içinden çalıştırılamadığı için, panel proot içinde çalışırken distro yönetimi kapalıdır.
+
+### Ortak proje klasörü
+
+Termux'taki `~/projeler` klasörü her distro oturumuna (terminal, kısayollar, işler, Claude servisi) `--bind` ile `/root/projeler` olarak bağlanır. Böylece Claude'un distroda üzerinde çalıştığı dosyalar Termux'tan ve *Dosyalar → Konumlar → Ortak proje klasörü* üzerinden de görünür. Klasör yoksa bağlama yapılmaz; *Kurulum* sayfasındaki "Ortak proje klasörü" adımı onu oluşturur. Başka klasörler için `config.json` içindeki `binds` listesini düzenle:
+
+```json
+"binds": [{ "src": "~/projeler", "dst": "/root/projeler" }]
+```
+
+## Claude Code (Remote Control)
+
+Claude Code Termux'un kendisinde çalışmadığı için bir proot-distro içinde (varsayılan Debian) çalışır. **Menü → Claude** sayfası `claude rc` komutunu termux-services (runit) ile bir servis olarak kurar:
+
+- Panelden bağımsız çalışır. Panel yeniden başlasa da sürer, çökerse 10 sn sonra yeniden başlar.
+- Çalışırken `termux-wake-lock` alır.
+- Oturum bağlantısı (`https://claude.ai/…`) logdan okunup sayfada gösterilir.
+- Loglar `$PREFIX/var/log/sv/claude-rc/` altında tutulur.
+- "Sahte terminal (TTY)" seçeneği komutu `script` ile bir pty içinde çalıştırır.
+
+İlk kez kullanmadan önce distroda bir kez terminalden `claude` çalıştırıp giriş yap ve klasöre güven. Sayfadaki **Terminalde aç** düğmesi bunu yapar.
+
+### Android 12+ phantom process killer
+
+Android 12 ve sonrası, Termux'un arka plandaki alt süreçlerini habersizce öldürebilir ("Process completed (signal 9)"). Uzun süre çalışan `claude rc` için bu sınırı bir kez adb ile kapat. Telefonun kendisinden yapmak için: Kablosuz hata ayıklama + `pkg install android-tools`. Kurulum sayfası durumu gösterir ve adımları listeler:
+
+```bash
+# Android 12L / 13+
+adb shell "settings put global settings_enable_monitor_phantom_procs false"
+# Android 12
+adb shell "/system/bin/device_config set_sync_disabled_for_tests persistent; /system/bin/device_config put activity_manager max_phantom_processes 2147483647"
+```
 
 ## Arka planda sürekli çalıştırma
 
@@ -70,7 +102,7 @@ Betik `termux-services` paketini kurar, gerekirse projeyi derler ve paneli servi
 İlk çalıştırmada `~/.termux-panel/config.json` oluşturulur:
 
 ```json
-{ "host": "127.0.0.1", "port": 8088, "token": "…", "auth": true, "snippets": [ … ] }
+{ "host": "127.0.0.1", "port": 8088, "token": "…", "auth": true, "snippets": [ … ], "binds": [ … ], "claudeRc": { … } }
 ```
 
 Ortam değişkenleri dosyadaki değerleri geçersiz kılar:
@@ -104,9 +136,10 @@ npm run build
 server/src/
   index.ts          Fastify, auth, statik dosyalar
   terminal.ts       PTY oturumları (node-pty → script → pipe yedekleri)
-  targets.ts        Ortamlar: Termux ya da proot-distro container'ı, komut sarmalama
+  targets.ts        Ortamlar: Termux ya da proot-distro container'ı, komut sarmalama, ortak klasörler
+  android.ts        Android sürümü, phantom process killer kontrolü
   jobs.ts           Uzun süren komutlar + WebSocket ile canlı çıktı
-  routes/           system, files, packages, processes, services, devtools, device, distros, misc
+  routes/           system, files, packages, processes, services, devtools, device, distros, setup, claude, misc
 web/src/
   App.tsx           Giriş ekranı, gezinme (mobilde alt bar, geniş ekranda yan menü)
   store.tsx         Toast, onay/soru diyalogları, iş takibi

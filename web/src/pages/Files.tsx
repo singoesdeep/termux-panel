@@ -71,7 +71,7 @@ export default function Files({ params }: { params: URLSearchParams }) {
   const [drag, setDrag] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const [places, setPlaces] = useState(false);
-  const { distros } = useEnvs();
+  const { info: envInfo, distros } = useEnvs();
 
   const go = useCallback((p: string) => {
     setSelected(null);
@@ -506,6 +506,7 @@ export default function Files({ params }: { params: URLSearchParams }) {
           {[
             { icon: 'home', label: 'Termux home', sub: data?.home ?? '~', path: '~' },
             { icon: 'phone', label: 'Dahili depolama', sub: '/storage/emulated/0', path: '/storage/emulated/0' },
+            ...(envInfo?.binds ?? []).map((b) => ({ icon: 'folder', label: 'Ortak proje klasörü', sub: `${b.src} → distrolarda ${b.dst}`, path: b.src })),
             ...distros.flatMap((d) => [
               { icon: 'box', label: `${d.name}: /root`, sub: d.os ?? '', path: `${d.rootfs}/root` },
               { icon: 'box', label: `${d.name}: / (kök)`, sub: 'Distronun tüm dosya sistemi', path: d.rootfs },

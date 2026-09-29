@@ -13,7 +13,8 @@ export type Page =
   | 'shortcuts'
   | 'jobs'
   | 'distros'
-  | 'setup';
+  | 'setup'
+  | 'claude';
 
 export interface Route {
   page: Page;

@@ -3,10 +3,12 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
-import { HOME, PREFIX, isTermux, which } from '../env.js';
+import { phantomStatus } from '../android.js';
+import { config } from '../config.js';
+import { HOME, PREFIX, isTermux, resolvePath } from '../env.js';
 import { HttpError, run } from '../exec.js';
 import { startShellJob } from '../jobs.js';
-import { PD_BIN, listDistros, pdStatus, type Distro } from '../targets.js';
+import { PD_BIN, bindArgs, listDistros, pdStatus, type Distro } from '../targets.js';
 import { ptyBackend } from '../terminal.js';
 
 /**
@@ -36,6 +38,8 @@ interface Item {
   actionLabel?: string;
   /** "Eksikleri kur" toplu kurulumuna dahil mi */
   inBulk?: boolean;
+  /** Elle yapılacak adımlar (çok satırlı, komutlar içerebilir) */
+  help?: string;
 }
 
 async function termuxInstalled(): Promise<Set<string>> {
@@ -68,13 +72,14 @@ function rootfsInstalled(d: Distro): Set<string> {
 
 /** Distro içinde komut: proot-distro login <ad> -- bash -lc '...' */
 const inDistro = (name: string, script: string) =>
-  `${shq(PD_BIN ?? 'proot-distro')} login ${shq(name)} --env DEBIAN_FRONTEND=noninteractive -- bash -lc ${shq(script)}`;
+  [PD_BIN ?? 'proot-distro', 'login', name, ...bindArgs(), '--env', 'DEBIAN_FRONTEND=noninteractive', '--', 'bash', '-lc', script].map(shq).join(' ');
 
 async function buildItems(): Promise<Item[]> {
-  const [pkgs, distros, upgradable] = await Promise.all([
+  const [pkgs, distros, upgradable, phantom] = await Promise.all([
     termuxInstalled(),
     listDistros(),
     isTermux ? run('apt', ['list', '--upgradable'], { timeout: 20000 }) : Promise.resolve({ stdout: '' }),
+    phantomStatus(),
   ]);
   const upgradeCount = upgradable.stdout.split('\n').filter((l) => l.includes('[upgradable from')).length;
   const pd = Boolean(PD_BIN);
@@ -150,6 +155,15 @@ async function buildItems(): Promise<Item[]> {
       actionLabel: 'Kur',
     },
     {
+      id: 'phantom',
+      group: 'termux',
+      title: 'Arka plan süreç sınırı (phantom process killer)',
+      desc: 'Android 12+ Termux\'un alt süreçlerini (proot, claude, dev server) habersizce öldürebilir: "Process completed (signal 9)". Bir kez adb ile kapatılmalı.',
+      status: phantom.status,
+      detail: phantom.detail,
+      help: phantom.help || undefined,
+    },
+    {
       id: 'proot-distro',
       group: 'linux',
       title: 'proot-distro',
@@ -170,6 +184,20 @@ async function buildItems(): Promise<Item[]> {
       actionLabel: `${DEFAULT_DISTRO} kur`,
       inBulk: true,
     },
+    ...config.binds.slice(0, 1).map((b): Item => {
+      const src = resolvePath(b.src);
+      return {
+        id: 'projects',
+        group: 'linux',
+        title: 'Ortak proje klasörü',
+        desc: `Termux'taki ${b.src} klasörü her distroda ${b.dst} olarak görünür. Claude'un çalıştığı projelere Termux'tan ve Dosyalar'dan da erişirsin. (config.json → binds)`,
+        status: fs.existsSync(src) ? 'ok' : 'missing',
+        detail: fs.existsSync(src) ? `${src} → ${b.dst}` : undefined,
+        command: `mkdir -p ${shq(src)}`,
+        actionLabel: 'Oluştur',
+        inBulk: true,
+      };
+    }),
     {
       id: 'devtools',
       group: 'linux',

@@ -24,6 +24,8 @@ export interface DistroInfo {
   available: boolean;
   reason?: string;
   root: string;
+  /** Distrolara bağlanan Termux klasörleri */
+  binds?: { src: string; dst: string }[];
   distros: Distro[];
   sessions: PdSession[];
 }

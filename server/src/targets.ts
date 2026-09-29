@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { HOME, PKG, PREFIX, PYTHON, SHELL, isTermux, which } from './env.js';
+import { config } from './config.js';
+import { HOME, PKG, PREFIX, PYTHON, SHELL, isTermux, resolvePath, which } from './env.js';
 import { HttpError, run, type RunResult } from './exec.js';
 
 /**
@@ -127,10 +128,19 @@ export interface Wrapped {
   env?: Record<string, string>;
 }
 
+/** Ortak klasörler: Termux'ta var olanlar her distro oturumuna `--bind` ile bağlanır. */
+export function activeBinds(): { src: string; dst: string }[] {
+  return config.binds
+    .map((b) => ({ src: resolvePath(b.src), dst: b.dst }))
+    .filter((b) => b.dst.startsWith('/') && !b.dst.includes(':') && !b.src.includes(':') && exists(b.src));
+}
+
+export const bindArgs = () => activeBinds().flatMap((b) => ['--bind', `${b.src}:${b.dst}`]);
+
 /** Bir komutu hedef ortamda çalışacak hale getirir. */
 export function wrap(t: Target, cmd: string, args: string[], opts: WrapOpts = {}): Wrapped {
   if (t.kind === 'termux') return { cmd, args, cwd: opts.cwd, env: opts.env };
-  const pdArgs = ['login', t.name, '--user', opts.user ?? 'root'];
+  const pdArgs = ['login', t.name, '--user', opts.user ?? 'root', ...bindArgs()];
   if (opts.cwd) pdArgs.push('--work-dir', opts.cwd);
   for (const [k, v] of Object.entries(opts.env ?? {})) pdArgs.push('--env', `${k}=${v}`);
   return { cmd: PD_BIN!, args: [...pdArgs, '--', cmd, ...args], cwd: HOME };
@@ -162,8 +172,8 @@ export function dpkgRoot(t: Target) {
 
 // ---- Oturum kapatma ----
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const alive = (pid: number) => {
+export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+export const alive = (pid: number) => {
   try {
     process.kill(pid, 0);
     return true;
@@ -173,7 +183,7 @@ const alive = (pid: number) => {
 };
 
 /** pid'in tüm alt süreçleri (/proc okunabildiği kadarıyla) */
-async function descendants(root: number): Promise<number[]> {
+export async function descendants(root: number): Promise<number[]> {
   const children = new Map<number, number[]>();
   try {
     for (const d of await fsp.readdir('/proc')) {

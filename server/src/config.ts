@@ -12,12 +12,30 @@ export interface Snippet {
   env?: string;
 }
 
+/** Distrolara bağlanan Termux klasörü: `proot-distro login --bind src:dst` */
+export interface Bind {
+  /** Termux tarafı (~ ile başlayabilir) */
+  src: string;
+  /** Distro içindeki yol */
+  dst: string;
+}
+
+/** `claude rc` servisinin ayarları (servis kurulunca kaydedilir) */
+export interface ClaudeRc {
+  distro: string;
+  cwd: string;
+  command: string;
+  tty: boolean;
+}
+
 export interface Config {
   host: string;
   port: number;
   token: string;
   auth: boolean;
   snippets: Snippet[];
+  binds: Bind[];
+  claudeRc?: ClaudeRc;
 }
 
 export const CONFIG_DIR = process.env.TP_CONFIG_DIR || path.join(HOME, '.termux-panel');
@@ -43,6 +61,8 @@ function load(): Config {
     token: stored.token ?? crypto.randomBytes(18).toString('base64url'),
     auth: stored.auth ?? true,
     snippets: stored.snippets ?? defaultSnippets,
+    binds: stored.binds ?? [{ src: '~/projeler', dst: '/root/projeler' }],
+    ...(stored.claudeRc ? { claudeRc: stored.claudeRc } : {}),
   };
   if (JSON.stringify(stored) !== JSON.stringify(cfg)) save(cfg);
 
@@ -63,13 +83,16 @@ function save(cfg: Config) {
 
 export const config = load();
 
-export function saveSnippets(snippets: Snippet[]) {
-  config.snippets = snippets;
+/** Ayarların bir kısmını değiştirip kaydeder (ortam değişkeni geçersiz kılmaları dosyaya yazılmaz). */
+export function updateConfig(patch: Partial<Pick<Config, 'snippets' | 'binds' | 'claudeRc'>>) {
+  Object.assign(config, patch);
   let stored: Partial<Config> = {};
   try {
     stored = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
   } catch {
     /* yok */
   }
-  save({ ...(stored as Config), snippets });
+  save({ ...(stored as Config), ...patch });
 }
+
+export const saveSnippets = (snippets: Snippet[]) => updateConfig({ snippets });
