@@ -6,19 +6,21 @@ import { navigate } from '../router';
 import { useApp, type JobMeta } from '../store';
 
 interface RcConfig {
-  distro: string;
   cwd: string;
   command: string;
   tty: boolean;
 }
 interface RcInfo {
   svAvailable: boolean;
-  pd: { available: boolean; reason?: string };
   installed: boolean;
+  /** Servis eski sürümde bir distroda çalışacak şekilde kurulmuş */
+  legacy: string | null;
   status: { state: string; pid: number | null; seconds: number | null; enabled: boolean; raw: string } | null;
   config: RcConfig;
-  distros: { name: string; os: string | null; claude: boolean; loggedIn: boolean }[];
-  binds: { src: string; dst: string }[];
+  claude: { installed: boolean; npm: boolean; version: string | null; loggedIn: boolean };
+  folders: string[];
+  home: string;
+  tty: boolean;
   wakeLock: boolean;
   phantom: { status: 'ok' | 'warn'; detail: string };
   log: string;
@@ -39,7 +41,7 @@ export default function Claude() {
         .then((d) => {
           setInfo(d);
           setErr('');
-          setForm((f) => f ?? { ...d.config, distro: d.distros.some((x) => x.name === d.config.distro) ? d.config.distro : (d.distros[0]?.name ?? d.config.distro) });
+          setForm((f) => f ?? d.config);
         })
         .catch((e) => setErr(errMsg(e))),
     [],
@@ -90,13 +92,15 @@ export default function Claude() {
       </>
     );
 
-  if (!info.pd.available || !info.distros.length)
+  if (!info.claude.installed)
     return (
       <>
         {header}
         <div className="content">
-          <Empty icon="box" title="Linux ortamı gerekli">
-            {info.pd.available ? 'Claude Code bir proot-distro içinde (ör. Debian) çalışır. Önce bir distro ve Claude Code kur.' : info.pd.reason}
+          <Empty icon="message" title="Claude Code kurulu değil">
+            {info.claude.npm
+              ? 'Eski bir npm kurulumu bulundu. Kurulum sayfasındaki adım, taşıma (migrate.sh) komutlarını gösterir.'
+              : 'Claude Code doğrudan Termux\'a kurulur (claude-code-android). Kurulum sayfasından tek dokunuşla kurabilirsin.'}
             <div style={{ marginTop: 14 }}>
               <button className="btn btn-primary" onClick={() => navigate('setup')}>
                 Kurulum'a git
@@ -109,11 +113,9 @@ export default function Claude() {
 
   const st = info.status;
   const up = st?.state === 'run';
-  const d = info.distros.find((x) => x.name === form.distro);
   const saved = info.config;
-  const dirty = info.installed && JSON.stringify(saved) !== JSON.stringify(form);
-  const loginTerminal = () =>
-    navigate('terminal', { env: form.distro, cmd: `export PATH="$HOME/.local/bin:$PATH"; mkdir -p ${shq(form.cwd)} && cd ${shq(form.cwd)} && claude` });
+  const dirty = info.installed && (Boolean(info.legacy) || JSON.stringify(saved) !== JSON.stringify(form));
+  const loginTerminal = () => navigate('terminal', { cmd: `mkdir -p ${shq(form.cwd)} && cd ${shq(form.cwd)} && claude` });
 
   return (
     <>
@@ -128,19 +130,20 @@ export default function Claude() {
           </button>
         )}
 
-        {d && !d.claude && (
+        {info.legacy && (
           <div className="callout">
             <Icon name="alert" />
             <span>
-              {form.distro} içinde <code>claude</code> bulunamadı. <a href="#/setup">Kurulum</a> sayfasından kur.
+              Bu servis eski sürümde bir distro içinde ({info.legacy}) çalışacak şekilde kurulmuş. Claude artık doğrudan Termux'ta çalışıyor: klasörü kontrol edip{' '}
+              <b>Kaydet ve yeniden başlat</b>'a dokun.
             </span>
           </div>
         )}
-        {d?.claude && !d.loggedIn && (
+        {!info.claude.loggedIn && (
           <div className="callout">
             <Icon name="info" />
             <span>
-              {form.distro} içinde henüz Claude'a giriş yapılmamış görünüyor. Servisten önce bir kez terminalde <code>claude</code> çalıştırıp giriş yap ve
+              Henüz Claude'a giriş yapılmamış görünüyor. Servisten önce bir kez terminalde <code>claude</code> çalıştırıp giriş yap ve
               klasöre güven.{' '}
               <button className="btn btn-sm" onClick={loginTerminal}>
                 <Icon name="terminal" size={16} /> Terminalde aç
@@ -160,7 +163,9 @@ export default function Claude() {
                 <div className="list-title">claude rc</div>
                 <div className="list-sub">
                   {up ? `PID ${st.pid} · ${fmtDuration(st.seconds)} · ` : ''}
-                  {saved.distro}:{saved.cwd}
+                  {info.legacy ? `${info.legacy}:` : ''}
+                  {saved.cwd}
+                  {info.claude.version ? ` · v${info.claude.version}` : ''}
                 </div>
               </div>
               {busy && <div className="spinner" />}
@@ -212,24 +217,13 @@ export default function Claude() {
             </div>
           )}
           <div>
-            <label className="field-label">Distro</label>
-            <div className="chips" role="radiogroup">
-              {info.distros.map((x) => (
-                <button key={x.name} role="radio" aria-checked={form.distro === x.name} className={`chip ${form.distro === x.name ? 'on' : ''}`} onClick={() => setForm({ ...form, distro: x.name })}>
-                  <Icon name="box" size={14} />
-                  {x.name}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="field-label">Çalışma klasörü (distro içindeki yol)</label>
-            <input className="input mono" value={form.cwd} onChange={(e) => setForm({ ...form, cwd: e.target.value })} placeholder="/root/projeler" autoCapitalize="off" spellCheck={false} />
-            {info.binds.length > 0 && (
+            <label className="field-label">Çalışma klasörü</label>
+            <input className="input mono" value={form.cwd} onChange={(e) => setForm({ ...form, cwd: e.target.value })} placeholder={`${info.home}/projeler`} autoCapitalize="off" spellCheck={false} />
+            {info.folders.length > 0 && (
               <div className="chips" style={{ marginTop: 8 }}>
-                {info.binds.map((b) => (
-                  <button key={b.dst} className="chip" onClick={() => setForm({ ...form, cwd: b.dst })} title={b.src}>
-                    <Icon name="folder" size={14} /> {b.dst}
+                {info.folders.map((f) => (
+                  <button key={f} className="chip" onClick={() => setForm({ ...form, cwd: f })}>
+                    <Icon name="folder" size={14} /> {f.startsWith(info.home) ? `~${f.slice(info.home.length)}` : f}
                   </button>
                 ))}
               </div>
@@ -240,13 +234,18 @@ export default function Claude() {
             <input className="input mono" value={form.command} onChange={(e) => setForm({ ...form, command: e.target.value })} placeholder="claude rc" autoCapitalize="off" spellCheck={false} />
           </div>
           <Switch checked={form.tty} onChange={(v) => setForm({ ...form, tty: v })} label="Sahte terminal (TTY) ver: claude etkileşimli terminal isterse açık kalsın" />
+          {form.tty && !info.tty && (
+            <div className="faint" style={{ fontSize: 12.5 }}>
+              TTY için <code>script</code> komutu gerekli: <code>pkg install util-linux</code>
+            </div>
+          )}
           <div className="row" style={{ flexWrap: 'wrap' }}>
             {info.installed && (
               <button
                 className="btn btn-sm btn-ghost"
                 disabled={busy}
                 onClick={async () => {
-                  if (await confirm({ title: 'Servis kaldırılsın mı?', message: 'claude rc durdurulur ve servis silinir. Distroya dokunulmaz.', confirm: 'Kaldır', danger: true }))
+                  if (await confirm({ title: 'Servis kaldırılsın mı?', message: 'claude rc durdurulur ve servis silinir. Claude Code ve ayarların yerinde kalır.', confirm: 'Kaldır', danger: true }))
                     act(() => del('/api/claude-rc'), 'Servis kaldırıldı');
                 }}
               >

@@ -7,6 +7,13 @@ const TERMUX_PREFIX = '/data/data/com.termux/files/usr';
 /** Termux içinde doğrudan mı çalışıyoruz (proot içinde değil)? */
 export const isTermux = Boolean(process.env.TERMUX_VERSION) || (process.env.PREFIX ?? '').includes('com.termux');
 
+// Panel bir claude oturumundan başlatıldıysa bu değişkenler terminallere ve işlere geçip
+// orada açılan claude'u "iç içe oturum" sanmaya itmesin
+// (CLAUDE_CODE_OAUTH_TOKEN gibi kullanıcı ayarlarına dokunulmaz)
+for (const k of Object.keys(process.env)) {
+  if (k === 'CLAUDECODE' || k === 'CLAUDE_PID' || /^CLAUDE_CODE_(ENTRYPOINT|EXECPATH|SESSION_|CHILD_SESSION|MESSAGING_)/.test(k)) delete process.env[k];
+}
+
 export const PREFIX = process.env.PREFIX || (isTermux ? TERMUX_PREFIX : '/usr');
 export const HOME = os.homedir();
 

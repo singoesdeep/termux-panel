@@ -118,7 +118,7 @@ export default function Distros() {
                       onClick={async () => {
                         const ok = await confirm({
                           title: `${d.name} durdurulsun mu?`,
-                          message: `${running} oturum ve içlerinde çalışan her şey kapanır (ör. claude rc, dev server'lar). Distronun dosyalarına dokunulmaz.`,
+                          message: `${running} oturum ve içlerinde çalışan her şey kapanır (ör. dev server'lar). Distronun dosyalarına dokunulmaz.`,
                           confirm: 'Durdur',
                           danger: true,
                         });
@@ -210,7 +210,7 @@ export default function Distros() {
                     onClick={async () => {
                       const ok = await confirm({
                         title: `${s.container} oturumu (PID ${s.pid}) kapatılsın mı?`,
-                        message: 'Bu oturumun içinde çalışan her şey kapanır (ör. orada çalışan claude rc veya dev server).',
+                        message: 'Bu oturumun içinde çalışan her şey kapanır (ör. orada çalışan bir dev server).',
                         confirm: 'Kapat',
                         danger: true,
                       });

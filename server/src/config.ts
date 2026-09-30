@@ -22,10 +22,12 @@ export interface Bind {
 
 /** `claude rc` servisinin ayarları (servis kurulunca kaydedilir) */
 export interface ClaudeRc {
-  distro: string;
+  /** Termux'taki çalışma klasörü (mutlak yol) */
   cwd: string;
   command: string;
   tty: boolean;
+  /** Eski sürüm: servis bu distroda çalışıyordu. Yeniden kaydedilince kalkar. */
+  distro?: string;
 }
 
 export interface Config {

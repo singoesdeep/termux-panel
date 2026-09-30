@@ -19,7 +19,7 @@ Varsayılan olarak yalnızca `127.0.0.1` adresini dinler ve token ile giriş ist
 | **Kısayollar** | Sık kullanılan komutları kaydet, tek dokunuşla arka planda ya da terminalde çalıştır. Her kısayol Termux'ta ya da bir distroda çalışabilir |
 | **Distrolar** | proot-distro: kurulu distrolar, imaj arayıp kurma, yedekle / geri yükle, sıfırla, yeniden adlandır, kaldır, çalışan oturumları görme ve kapatma |
 | **Cihaz** | Termux:API: pil, Wi-Fi, fener, titreşim, toast, bildirim, pano, TTS, parlaklık, konum, wake lock |
-| **Claude** | `claude rc` (Remote Control) servisi: distro / klasör seçimi, başlat-durdur, oturum bağlantısı, canlı log |
+| **Claude** | `claude rc` (Remote Control) servisi: Termux'ta klasör seçimi, başlat-durdur, oturum bağlantısı, canlı log |
 | **İşler** | Panelden başlatılan tüm uzun komutlar ve çıktıları |
 
 ## Kurulum (sıfırdan Termux)
@@ -29,7 +29,8 @@ Proje klasörünü Termux'a kopyaladıktan sonra:
 ```bash
 cd ~/termux-panel
 bash scripts/bootstrap.sh            # temel kurulum + paneli başlatır
-bash scripts/bootstrap.sh --hepsi    # + proot-distro, Debian, geliştirme araçları, Claude Code
+bash scripts/bootstrap.sh --hepsi    # + geliştirme araçları ve Claude Code (Termux'a)
+bash scripts/bootstrap.sh --distro   # + isteğe bağlı: proot-distro ve Debian
 bash scripts/bootstrap.sh --servis   # + Termux açılınca panel otomatik başlasın
 ```
 
@@ -42,25 +43,25 @@ Betik Termux paketlerini günceller; Node.js, git ve derleyiciyi kurar (Node zat
 
 Bağlantıyı telefonun tarayıcısında aç. Tarayıcı menüsünden **Ana ekrana ekle** dersen uygulama gibi tam ekran açılır.
 
-Geri kalan her şey panelde **Menü → Kurulum** sayfasından yapılabilir. Orada her bileşenin durumu görünür: depolama izni, Termux:API, termux-services, node-pty, otomatik başlatma, proot-distro, Debian, Debian içinde geliştirme araçları ve Claude Code. Bileşenler tek tek ya da **Eksikleri kur** ile tek seferde, canlı çıktıyla kurulur. Kurulum tamamlanmadıysa ana ekranda bir uyarı çıkar.
+Geri kalan her şey panelde **Menü → Kurulum** sayfasından yapılabilir. Orada her bileşenin durumu görünür: depolama izni, Termux:API, termux-services, node-pty, otomatik başlatma, proje klasörü, geliştirme araçları, Claude Code ve isteğe bağlı olarak proot-distro / Debian. Bileşenler tek tek ya da **Eksikleri kur** ile tek seferde, canlı çıktıyla kurulur. Toplu kurulumda bir adım başarısız olursa iş orada durur ve başarısız olarak işaretlenir. Kurulum tamamlanmadıysa ana ekranda bir uyarı çıkar.
 
 > `node-pty` derlenemezse panel yine çalışır. Terminal, `script` komutuyla (`pkg install util-linux`) çalışan yedek moda geçer; bu modda terminal yeniden boyutlandırılamaz. Kurulum sayfasındaki "Yeniden derle" ile tekrar denenebilir.
 
-## proot-distro desteği
+## proot-distro desteği (isteğe bağlı)
 
-Panel Termux'ta çalışırken kurulu proot-distro container'larını otomatik bulur (hem yeni v5 `containers/` hem eski v4 `installed-rootfs/` düzeni). Distro varsa şu yerlerde bir **ortam seçici** çıkar:
+Panel ve Claude Code doğrudan Termux'ta çalışır; proot-distro yalnızca ayrıca bir Linux dağıtımı kullanmak isteyenler içindir. Panel Termux'ta çalışırken kurulu proot-distro container'larını otomatik bulur (hem yeni v5 `containers/` hem eski v4 `installed-rootfs/` düzeni). Distro varsa şu yerlerde bir **ortam seçici** çıkar:
 
 - **Terminal:** `+` ile yeni oturum açarken Termux ya da bir distro seçilir.
 - **Paketler:** apt tabanlı distrolarda (Debian, Ubuntu…) kurulu paketler, arama, kurma ve güncelleme.
 - **Python & Node:** Distronun içindeki pip ve global npm paketleri.
-- **Kısayollar:** Her kısayolun çalışacağı ortam seçilebilir. Örnek: ortamı `debian`, komutu `claude rc` olan bir kısayol.
+- **Kısayollar:** Her kısayolun çalışacağı ortam seçilebilir. Örnek: ortamı `debian`, komutu `apt list --upgradable` olan bir kısayol.
 - **Dosyalar:** *Konumlar* menüsünde her distronun `/root` klasörü ve kökü var. Bir distronun içindeki klasördeyken "Burada terminal aç" ve betik çalıştırma o distronun içinde çalışır.
 
 Komutlar `proot-distro login <ad> --bind … --work-dir <klasör> -- <komut>` ile çalıştırılır. Bir distro terminal sekmesi kapatıldığında oturumun tüm süreç ağacı `proot-distro kill` ile kapatılır. Distrolar sayfasındaki **Durdur**, o distronun bütün oturumlarını kapatır. Kurulu paket listesi dpkg veritabanından doğrudan okunur, bu yüzden hızlıdır. proot-distro bir proot içinden çalıştırılamadığı için, panel proot içinde çalışırken distro yönetimi kapalıdır.
 
 ### Ortak proje klasörü
 
-Termux'taki `~/projeler` klasörü her distro oturumuna (terminal, kısayollar, işler, Claude servisi) `--bind` ile `/root/projeler` olarak bağlanır. Böylece Claude'un distroda üzerinde çalıştığı dosyalar Termux'tan ve *Dosyalar → Konumlar → Ortak proje klasörü* üzerinden de görünür. Klasör yoksa bağlama yapılmaz; *Kurulum* sayfasındaki "Ortak proje klasörü" adımı onu oluşturur. Başka klasörler için `config.json` içindeki `binds` listesini düzenle:
+Termux'taki `~/projeler` klasörü Claude servisinin varsayılan çalışma klasörüdür ve her distro oturumuna (terminal, kısayollar, işler) `--bind` ile `/root/projeler` olarak bağlanır. Böylece aynı projeler distrolardan da görünür. Klasör yoksa bağlama yapılmaz; *Kurulum* sayfasındaki "Proje klasörü" adımı onu oluşturur. Başka klasörler için `config.json` içindeki `binds` listesini düzenle:
 
 ```json
 "binds": [{ "src": "~/projeler", "dst": "/root/projeler" }]
@@ -68,15 +69,24 @@ Termux'taki `~/projeler` klasörü her distro oturumuna (terminal, kısayollar, 
 
 ## Claude Code (Remote Control)
 
-Claude Code Termux'un kendisinde çalışmadığı için bir proot-distro içinde (varsayılan Debian) çalışır. **Menü → Claude** sayfası `claude rc` komutunu termux-services (runit) ile bir servis olarak kurar:
+Claude Code doğrudan Termux'ta çalışır. [claude-code-android](https://github.com/ferrumclaudepilgrim/claude-code-android) betiğiyle kurulur: Anthropic'in resmi linux-arm64 sürümü glibc-runner ile yamalanır, `$PREFIX/bin/claude` sarmalayıcısı günde bir kez güncellemeleri kontrol eder. Kurulum sayfasındaki "Claude Code" adımı betiği indirip soruları otomatik yanıtlar (paketler ayrı adımlarda kurulduğu için ikisine de "hayır") ve sonunda `claude --version` ile doğrular. Elle kurmak istersen:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ferrumclaudepilgrim/claude-code-android/main/install.sh -o install.sh
+less install.sh
+bash install.sh
+```
+
+**Menü → Claude** sayfası `claude rc` komutunu termux-services (runit) ile bir servis olarak kurar:
 
 - Panelden bağımsız çalışır. Panel yeniden başlasa da sürer, çökerse 10 sn sonra yeniden başlar.
 - Çalışırken `termux-wake-lock` alır.
 - Oturum bağlantısı (`https://claude.ai/…`) logdan okunup sayfada gösterilir.
 - Loglar `$PREFIX/var/log/sv/claude-rc/` altında tutulur.
-- "Sahte terminal (TTY)" seçeneği komutu `script` ile bir pty içinde çalıştırır.
+- "Sahte terminal (TTY)" seçeneği komutu `script` ile (`util-linux`) bir pty içinde çalıştırır.
+- Eski sürümde distro içinde kurulmuş bir servis varsa sayfa bunu gösterir; **Kaydet ve yeniden başlat** onu Termux'a taşır.
 
-İlk kez kullanmadan önce distroda bir kez terminalden `claude` çalıştırıp giriş yap ve klasöre güven. Sayfadaki **Terminalde aç** düğmesi bunu yapar.
+İlk kez kullanmadan önce bir kez terminalden `claude` çalıştırıp giriş yap ve klasöre güven. Sayfadaki **Terminalde aç** düğmesi bunu yapar.
 
 ### Android 12+ phantom process killer
 

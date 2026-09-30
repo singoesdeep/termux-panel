@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,7 +9,7 @@ import { config } from '../config.js';
 import { HOME, PREFIX, isTermux, resolvePath } from '../env.js';
 import { HttpError, run } from '../exec.js';
 import { startShellJob } from '../jobs.js';
-import { PD_BIN, bindArgs, listDistros, pdStatus, type Distro } from '../targets.js';
+import { PD_BIN, listDistros, pdStatus } from '../targets.js';
 import { ptyBackend } from '../terminal.js';
 
 /**
@@ -19,7 +20,8 @@ import { ptyBackend } from '../terminal.js';
 
 const PANEL_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const DEFAULT_DISTRO = 'debian';
-const DEV_PKGS = ['git', 'curl', 'ca-certificates', 'build-essential', 'python3', 'python3-pip', 'python3-venv', 'nodejs', 'npm'];
+/** Claude Code'un Termux'ta rahat çalışması için gereken araçlar (Bash aracı git, jq, python… bekler) */
+const DEV_PKGS = ['git', 'curl', 'jq', 'python', 'openssh', 'make', 'clang', 'util-linux'];
 
 const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 const PKG_INSTALL = 'DEBIAN_FRONTEND=noninteractive pkg install -y -o Dpkg::Options::=--force-confold';
@@ -28,7 +30,7 @@ type Status = 'ok' | 'missing' | 'warn' | 'blocked';
 
 interface Item {
   id: string;
-  group: 'termux' | 'linux';
+  group: 'termux' | 'claude' | 'linux';
   title: string;
   desc: string;
   status: Status;
@@ -56,23 +58,56 @@ async function termuxInstalled(): Promise<Set<string>> {
   }
 }
 
-function rootfsInstalled(d: Distro): Set<string> {
-  try {
-    const status = fs.readFileSync(path.join(d.rootfs, 'var/lib/dpkg/status'), 'utf8');
-    const out = new Set<string>();
-    for (const block of status.split('\n\n')) {
-      const name = /^Package: (.+)$/m.exec(block)?.[1];
-      if (name && /^Status: .* installed$/m.test(block)) out.add(name);
-    }
-    return out;
-  } catch {
-    return new Set();
-  }
-}
+/**
+ * Claude Code, claude-code-android betiğiyle doğrudan Termux'a kurulur: resmi linux-arm64
+ * ikili dosyası glibc-runner ile yamalanır, $PREFIX/bin/claude bir sarmalayıcıdır.
+ * Betik iki soru sorar (Termux yeni mi? önerilen paketler?); ikisine de "hayır" verilir:
+ * paketler zaten güncellendi ve geliştirme araçları ayrı bir adımda kuruluyor.
+ * Betik bazı durumlarda (eski npm kurulumu, bu cihazda çalışmayan sürüm) 0 ile çıkar;
+ * bu yüzden sonuç ayrıca doğrulanır.
+ */
+const CLAUDE_INSTALL_URL = 'https://raw.githubusercontent.com/ferrumclaudepilgrim/claude-code-android/main/install.sh';
+const claudeInstallCmd = () => {
+  const f = '"${TMPDIR:-$PREFIX/tmp}/claude-code-android-install.sh"';
+  const log = '"${TMPDIR:-$PREFIX/tmp}/claude-code-android-install.log"';
+  return [
+    `curl -fsSL ${shq(CLAUDE_INSTALL_URL)} -o ${f}`,
+    // İç içe claude oturumu uyarısı (etkileşimli soru) çıkmasın
+    'unset CLAUDECODE CLAUDE_CODE_EXECPATH',
+    `printf 'n\\nn\\n' | bash ${f} 2>&1 | tee ${log}`,
+    `rc=\${PIPESTATUS[1]}`,
+    `[ "$rc" = 0 ] || { echo; echo "Kurulum betiği hata verdi (çıkış kodu $rc)"; exit "$rc"; }`,
+    `if grep -q 'cannot run on this device' ${log}; then echo; echo "Bu Claude Code sürümü bu Android sürümünde çalışmıyor. Sabitlenmiş sürüm için Termux'ta:"; echo '  curl -fsSL https://raw.githubusercontent.com/ferrumclaudepilgrim/claude-code-android/main/install-pinned.sh -o install-pinned.sh && bash install-pinned.sh'; exit 1; fi`,
+    `if grep -q 'older pinned v2.x install' ${log}; then echo; echo "Eski (npm) Claude Code kurulumu bulundu. Yukarıdaki migrate.sh komutlarını Termux'ta çalıştır."; exit 1; fi`,
+    `"$PREFIX/bin/claude" --version || { echo 'claude çalıştırılamadı'; exit 1; }`,
+  ].join('\n');
+};
 
-/** Distro içinde komut: proot-distro login <ad> -- bash -lc '...' */
-const inDistro = (name: string, script: string) =>
-  [PD_BIN ?? 'proot-distro', 'login', name, ...bindArgs(), '--env', 'DEBIAN_FRONTEND=noninteractive', '--', 'bash', '-lc', script].map(shq).join(' ');
+/** Termux'taki Claude Code kurulumu: sarmalayıcı + indirilmiş sürümler */
+export function claudeState(): { installed: boolean; npm: boolean; version: string | null; loggedIn: boolean } {
+  const bin = path.join(PREFIX, 'bin/claude');
+  let versions: string[] = [];
+  try {
+    versions = fs.readdirSync(path.join(HOME, '.local/share/claude/versions')).filter((v) => /^\d+\.\d+\.\d+$/.test(v));
+  } catch {
+    /* yok */
+  }
+  const npm = fs.existsSync(path.join(PREFIX, 'lib/node_modules/@anthropic-ai/claude-code'));
+  const isFile = (() => {
+    try {
+      return fs.lstatSync(bin).isFile();
+    } catch {
+      return false;
+    }
+  })();
+  const sorted = versions.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  return {
+    installed: isFile && versions.length > 0,
+    npm,
+    version: sorted.at(-1) ?? null,
+    loggedIn: fs.existsSync(path.join(HOME, '.claude/.credentials.json')),
+  };
+}
 
 async function buildItems(): Promise<Item[]> {
   const [pkgs, distros, upgradable, phantom] = await Promise.all([
@@ -83,14 +118,10 @@ async function buildItems(): Promise<Item[]> {
   ]);
   const upgradeCount = upgradable.stdout.split('\n').filter((l) => l.includes('[upgradable from')).length;
   const pd = Boolean(PD_BIN);
-  const distro = distros.find((d) => d.name === DEFAULT_DISTRO) ?? distros.find((d) => d.pm === 'apt');
-  const distroName = distro?.name ?? DEFAULT_DISTRO;
-  const dpkg = distro ? rootfsInstalled(distro) : new Set<string>();
-  const missingDev = DEV_PKGS.filter((p) => !dpkg.has(p));
-  const hasNpm = dpkg.has('npm') || (distro ? fs.existsSync(path.join(distro.rootfs, 'usr/local/bin/npm')) : false);
-  const claude = distro
-    ? ['usr/local/bin/claude', 'usr/bin/claude', 'root/.local/bin/claude'].some((p) => fs.existsSync(path.join(distro.rootfs, p)))
-    : false;
+  const distro = distros.find((d) => d.name === DEFAULT_DISTRO) ?? distros[0];
+  const missingDev = DEV_PKGS.filter((p) => !pkgs.has(p));
+  const cc = claudeState();
+  const arm64 = os.arch() === 'arm64';
   const serviceDir = path.join(PREFIX, 'var/service/termux-panel');
 
   const items: Item[] = [
@@ -163,36 +194,15 @@ async function buildItems(): Promise<Item[]> {
       detail: phantom.detail,
       help: phantom.help || undefined,
     },
-    {
-      id: 'proot-distro',
-      group: 'linux',
-      title: 'proot-distro',
-      desc: 'Termux içinde tam bir Linux (Debian, Ubuntu…) çalıştırır. Claude Code gibi araçlar burada sorunsuz çalışır.',
-      status: pd ? 'ok' : 'missing',
-      command: `${PKG_INSTALL} proot-distro`,
-      actionLabel: 'Kur',
-      inBulk: true,
-    },
-    {
-      id: 'distro',
-      group: 'linux',
-      title: 'Linux dağıtımı',
-      desc: `Varsayılan olarak ${DEFAULT_DISTRO} kurulur (~50 MB indirme).`,
-      status: distro ? 'ok' : pd ? 'missing' : 'blocked',
-      detail: distro ? `${distro.name} · ${distro.os ?? ''}` : !pd ? 'Önce proot-distro kurulmalı' : undefined,
-      command: `${shq(PD_BIN ?? 'proot-distro')} install ${DEFAULT_DISTRO}`,
-      actionLabel: `${DEFAULT_DISTRO} kur`,
-      inBulk: true,
-    },
     ...config.binds.slice(0, 1).map((b): Item => {
       const src = resolvePath(b.src);
       return {
         id: 'projects',
-        group: 'linux',
-        title: 'Ortak proje klasörü',
-        desc: `Termux'taki ${b.src} klasörü her distroda ${b.dst} olarak görünür. Claude'un çalıştığı projelere Termux'tan ve Dosyalar'dan da erişirsin. (config.json → binds)`,
+        group: 'claude',
+        title: 'Proje klasörü',
+        desc: `Claude'un çalışacağı projeler için ${b.src}. Distro kurarsan orada da ${b.dst} olarak görünür. (config.json → binds)`,
         status: fs.existsSync(src) ? 'ok' : 'missing',
-        detail: fs.existsSync(src) ? `${src} → ${b.dst}` : undefined,
+        detail: fs.existsSync(src) ? src : undefined,
         command: `mkdir -p ${shq(src)}`,
         actionLabel: 'Oluştur',
         inBulk: true,
@@ -200,25 +210,51 @@ async function buildItems(): Promise<Item[]> {
     }),
     {
       id: 'devtools',
-      group: 'linux',
+      group: 'claude',
       title: 'Geliştirme araçları',
-      desc: `${distroName} içinde: ${DEV_PKGS.join(', ')}`,
-      status: !distro ? 'blocked' : missingDev.length ? 'missing' : 'ok',
-      detail: !distro ? 'Önce bir distro kurulmalı' : missingDev.length ? `Eksik: ${missingDev.join(', ')}` : undefined,
-      command: inDistro(distroName, `apt-get update && apt-get install -y ${DEV_PKGS.join(' ')}`),
+      desc: `Claude'un Bash aracının beklediği temel araçlar: ${DEV_PKGS.join(', ')}`,
+      status: missingDev.length ? 'missing' : 'ok',
+      detail: missingDev.length ? `Eksik: ${missingDev.join(', ')}` : undefined,
+      command: `${PKG_INSTALL} ${DEV_PKGS.join(' ')}`,
       actionLabel: 'Kur',
       inBulk: true,
     },
     {
       id: 'claude',
-      group: 'linux',
+      group: 'claude',
       title: 'Claude Code',
-      desc: `${distroName} içine global npm paketi olarak kurulur. İlk çalıştırmada terminalde giriş yapman gerekir.`,
-      status: !distro ? 'blocked' : claude ? 'ok' : hasNpm ? 'missing' : 'blocked',
-      detail: !distro ? 'Önce bir distro kurulmalı' : !claude && !hasNpm ? 'Önce geliştirme araçları (npm) kurulmalı' : undefined,
-      command: inDistro(distroName, 'npm install -g @anthropic-ai/claude-code'),
+      desc: 'claude-code-android betiğiyle doğrudan Termux\'a kurulur (resmi linux-arm64 sürümü + glibc-runner, ~250 MB). Kendini günde bir kez günceller. İlk çalıştırmada terminalde giriş yapman gerekir.',
+      status: !arm64 ? 'blocked' : cc.installed ? (cc.loggedIn ? 'ok' : 'warn') : cc.npm ? 'warn' : 'missing',
+      detail: !arm64
+        ? `Yalnızca aarch64 (arm64) cihazlarda çalışır; bu cihaz: ${os.arch()}`
+        : cc.installed
+          ? `Sürüm ${cc.version}${cc.loggedIn ? '' : ' · henüz giriş yapılmamış: Claude sayfasından terminalde aç'}`
+          : cc.npm
+            ? 'Eski npm kurulumu bulundu: betik taşıma (migrate.sh) komutlarını gösterir'
+            : undefined,
+      // Kuruluysa (giriş eksik olsa da) yeniden kurma
+      command: cc.installed ? undefined : claudeInstallCmd(),
       actionLabel: 'Kur',
-      inBulk: true,
+      inBulk: arm64 && !cc.installed,
+    },
+    {
+      id: 'proot-distro',
+      group: 'linux',
+      title: 'proot-distro',
+      desc: 'İsteğe bağlı: Termux içinde tam bir Linux (Debian, Ubuntu…) çalıştırmak için. Panel ve Claude Code buna ihtiyaç duymaz.',
+      status: pd ? 'ok' : 'missing',
+      command: `${PKG_INSTALL} proot-distro`,
+      actionLabel: 'Kur',
+    },
+    {
+      id: 'distro',
+      group: 'linux',
+      title: 'Linux dağıtımı',
+      desc: `İsteğe bağlı: varsayılan olarak ${DEFAULT_DISTRO} kurulur (~50 MB indirme). Diğerleri için Distrolar sayfası.`,
+      status: distro ? 'ok' : pd ? 'missing' : 'blocked',
+      detail: distro ? `${distro.name} · ${distro.os ?? ''}` : !pd ? 'Önce proot-distro kurulmalı' : undefined,
+      command: `${shq(PD_BIN ?? 'proot-distro')} install ${DEFAULT_DISTRO}`,
+      actionLabel: `${DEFAULT_DISTRO} kur`,
     },
   ];
   return items;
@@ -239,12 +275,15 @@ export default async function setupRoutes(app: FastifyInstance) {
     if (!isTermux) throw new HttpError(400, 'Kurulum yalnızca panel Termux\'ta çalışırken yapılabilir');
     const items = await buildItems();
     if (req.params.id === 'all') {
-      // Sırası önemli: proot-distro → distro → araçlar → Claude Code. Durum "blocked" olanlar
-      // (ör. distro henüz yok) da dahil edilir; önceki adımlar onları çözer.
+      // Sırası önemli: paketler → proje klasörü → araçlar → Claude Code. Durum "blocked" olanlar
+      // da dahil edilir; önceki adımlar onları çözer. Her adım alt kabukta çalışır; biri
+      // başarısız olursa iş o adımın çıkış koduyla biter (sonraki adımlara geçilmez).
       const todo = items.filter((i) => i.inBulk && i.status !== 'ok' && i.command);
       if (!todo.length) throw new HttpError(400, 'Kurulacak eksik bileşen yok');
-      const script = todo.map((i) => `echo; echo "==> ${i.title}"; ${i.command}`).join(' && ');
-      return startShellJob(`Kurulum: ${todo.map((i) => i.title).join(', ')}`, `set -e; ${script}; echo; echo "==> Tamamlandı"`);
+      const script = todo
+        .map((i) => `echo; echo ${shq(`==> ${i.title}`)}\n( ${i.command}\n) || { rc=$?; echo; echo ${shq(`==> BAŞARISIZ: ${i.title}`)}" (çıkış kodu $rc)"; exit $rc; }`)
+        .join('\n');
+      return startShellJob(`Kurulum: ${todo.map((i) => i.title).join(', ')}`, `${script}\necho; echo '==> Tamamlandı'`);
     }
     const item = items.find((i) => i.id === req.params.id);
     if (!item?.command) throw new HttpError(404, 'Bilinmeyen kurulum adımı');

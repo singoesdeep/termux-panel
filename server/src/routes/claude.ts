@@ -4,13 +4,15 @@ import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { phantomStatus } from '../android.js';
 import { config, updateConfig, type ClaudeRc } from '../config.js';
-import { PREFIX, which } from '../env.js';
+import { HOME, PREFIX, resolvePath, which } from '../env.js';
 import { HttpError } from '../exec.js';
-import { NAME_RE, PD_BIN, activeBinds, alive, bindArgs, descendants, getTarget, listDistros, pdStatus, sleep } from '../targets.js';
+import { alive, descendants, sleep } from '../targets.js';
+import { claudeState } from './setup.js';
 import { SVDIR, SV_LOGDIR, sv, svAvailable, svStatus } from './services.js';
 
 /**
- * `claude rc` (Remote Control) için termux-services (runit) servisi.
+ * `claude rc` (Remote Control) için termux-services (runit) servisi. Claude Code doğrudan
+ * Termux'ta çalışır (claude-code-android kurulumu, $PREFIX/bin/claude).
  * Panelden bağımsız çalışır: panel yeniden başlasa da sürer, çökerse runit yeniden başlatır,
  * çıktısı svlogd ile $PREFIX/var/log/sv/claude-rc altında tutulur.
  */
@@ -18,44 +20,48 @@ import { SVDIR, SV_LOGDIR, sv, svAvailable, svStatus } from './services.js';
 const NAME = 'claude-rc';
 const DIR = path.join(SVDIR, NAME);
 const SH = path.join(PREFIX, 'bin/sh');
+const BASH = path.join(PREFIX, 'bin/bash');
 const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
-
-const CLAUDE_PATHS = ['root/.local/bin/claude', 'usr/local/bin/claude', 'usr/bin/claude'];
 
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Z0-9]|\x1b[=>78]|\r/g;
 const URL_RE = /https:\/\/claude\.ai\/[^\s'"<>`)\]]+/g;
 
 function defaults(): ClaudeRc {
-  const bind = activeBinds()[0];
-  return { distro: 'debian', cwd: bind?.dst ?? '/root', command: 'claude rc', tty: true };
+  const bind = config.binds[0];
+  return { cwd: bind ? resolvePath(bind.src) : HOME, command: 'claude rc', tty: true };
 }
+
+/** Eski sürümde servis bir distroda çalışıyordu (distro alanı ve distro içi yol) */
+const isLegacy = (c: ClaudeRc | undefined) => Boolean(c?.distro);
 
 function validate(b: Partial<ClaudeRc>): ClaudeRc {
-  const distro = String(b.distro ?? '');
-  const cwd = String(b.cwd ?? '').trim();
+  const raw = String(b.cwd ?? '').trim();
   const command = String(b.command ?? '').trim();
-  if (!NAME_RE.test(distro)) throw new HttpError(400, 'Geçersiz distro adı');
-  if (!/^\/[^\0\n]*$/.test(cwd)) throw new HttpError(400, 'Çalışma klasörü / ile başlayan bir yol olmalı');
+  if (!raw || /[\0\n]/.test(raw) || !(raw.startsWith('/') || raw === '~' || raw.startsWith('~/'))) throw new HttpError(400, 'Çalışma klasörü / ya da ~ ile başlayan bir yol olmalı');
   if (!command || /[\0\n]/.test(command)) throw new HttpError(400, 'Komut tek satır olmalı');
-  return { distro, cwd, command, tty: b.tty !== false };
+  return { cwd: resolvePath(raw), command, tty: b.tty !== false };
 }
 
-/** runit'in çalıştıracağı betik. Distro içinde: klasöre gir, (isteğe bağlı) sahte TTY ile komutu çalıştır. */
+/** runit'in çalıştıracağı betik. Termux'ta: klasöre gir, (isteğe bağlı) sahte TTY ile komutu çalıştır. */
 function runScript(c: ClaudeRc) {
-  // Debian'da root için ~/.local/bin (native installer) PATH'te olmayabilir
   // stdin /dev/null: script çocuk bitene kadar bekler ve onun çıkış koduyla çıkar
   // (boru ya da hiç kapanmayan stdin ile script çocuk bitse de takılı kalıyor)
-  const cmd = c.tty ? `exec script -qfec ${shq(c.command)} /dev/null </dev/null` : `exec ${c.command} </dev/null`;
-  const inner = `export PATH="$HOME/.local/bin:$PATH"; mkdir -p ${shq(c.cwd)} && cd ${shq(c.cwd)} && ${cmd}`;
-  const login = [PD_BIN!, 'login', c.distro, ...bindArgs(), '--', '/bin/bash', '-lc', inner].map(shq).join(' ');
+  const run = c.tty ? `exec script -qfec ${shq(c.command)} /dev/null </dev/null` : `exec ${c.command} </dev/null`;
+  // Giriş kabuğu (~/.profile'daki değişkenler için) PATH'i değiştirebilir; sonra yeniden ayarlanır.
+  // ~/.local/bin: claude kendi "native" kurulum yolunu PATH'te arar
+  const cmd = `export PATH="${PREFIX}/bin:$PATH:$HOME/.local/bin"; ${run}`;
   return `#!${SH}
 # Termux Panel tarafından oluşturuldu. Panelden düzenle: Menü → Claude
 exec 2>&1
 # Android Termux'u uyutmasın
 command -v termux-wake-lock >/dev/null 2>&1 && termux-wake-lock
-echo "==> ${c.distro}:${c.cwd} · ${c.command.replace(/[`$"\\]/g, '')}"
-exec ${login}
+export HOME=${shq(HOME)}
+export PATH="${PREFIX}/bin:$PATH:$HOME/.local/bin"
+unset CLAUDECODE CLAUDE_CODE_EXECPATH CLAUDE_CODE_ENTRYPOINT
+echo "==> ${c.cwd.replace(/[`$"\\]/g, '')} · ${c.command.replace(/[`$"\\]/g, '')}"
+mkdir -p ${shq(c.cwd)} && cd ${shq(c.cwd)} || exit 1
+exec ${shq(BASH)} -lc ${shq(cmd)}
 `;
 }
 
@@ -93,8 +99,8 @@ async function waitSupervise() {
 }
 
 /**
- * Servisi durdurur. runit TERM'i yalnızca ana sürece gönderir; proot içindeki claude
- * geride kalabileceği için süreç ağacı önceden alınır ve kalanlar kapatılır.
+ * Servisi durdurur. runit TERM'i yalnızca ana sürece gönderir; claude'un alt
+ * süreçleri geride kalabileceği için süreç ağacı önceden alınır ve kalanlar kapatılır.
  */
 async function stop() {
   const st = await svStatus(NAME);
@@ -125,22 +131,21 @@ async function readLog() {
 
 export default async function claudeRoutes(app: FastifyInstance) {
   app.get('/api/claude-rc', async () => {
-    const [available, distros, phantom] = await Promise.all([svAvailable(), listDistros(), phantomStatus()]);
+    const [available, phantom] = await Promise.all([svAvailable(), phantomStatus()]);
     const installed = fs.existsSync(path.join(DIR, 'run'));
     const status = available && installed ? await svStatus(NAME) : null;
+    const legacy = isLegacy(config.claudeRc);
     return {
       svAvailable: available,
-      pd: pdStatus(),
       installed,
+      // Eski distro servisinin distro adı (yeniden kaydedilince Termux'a taşınır)
+      legacy: installed && legacy ? config.claudeRc!.distro! : null,
       status,
-      config: config.claudeRc ?? defaults(),
-      distros: distros.map((d) => ({
-        name: d.name,
-        os: d.os,
-        claude: CLAUDE_PATHS.some((p) => fs.existsSync(path.join(d.rootfs, p))),
-        loggedIn: fs.existsSync(path.join(d.rootfs, 'root/.claude/.credentials.json')),
-      })),
-      binds: activeBinds(),
+      config: config.claudeRc && !legacy ? config.claudeRc : defaults(),
+      claude: claudeState(),
+      folders: config.binds.map((b) => resolvePath(b.src)).filter((p) => fs.existsSync(p)),
+      home: HOME,
+      tty: Boolean(which('script')),
       wakeLock: Boolean(which('termux-wake-lock')),
       phantom,
       ...(installed ? await readLog() : { log: '', urls: [] }),
@@ -150,10 +155,9 @@ export default async function claudeRoutes(app: FastifyInstance) {
   /** Kur ya da ayarları güncelle; servis çalışıyorsa yeni ayarlarla yeniden başlar */
   app.put('/api/claude-rc', async (req) => {
     if (!(await svAvailable())) throw new HttpError(501, 'termux-services kurulu değil ya da Termux yeniden başlatılmadı');
-    const st = pdStatus();
-    if (!st.available) throw new HttpError(501, st.reason ?? 'proot-distro kullanılamıyor');
+    if (!claudeState().installed) throw new HttpError(501, 'Claude Code Termux\'ta kurulu değil. Kurulum sayfasından kur.');
     const c = validate((req.body ?? {}) as Partial<ClaudeRc>);
-    await getTarget(c.distro); // distro var mı
+    if (c.tty && !which('script')) throw new HttpError(501, 'TTY için util-linux paketi (script komutu) gerekli');
     const fresh = !fs.existsSync(path.join(DIR, 'run'));
     if (!fresh) await stop();
     await writeService(c);

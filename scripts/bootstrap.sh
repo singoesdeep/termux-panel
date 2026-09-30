@@ -2,18 +2,21 @@
 # Sıfırdan kurulmuş bir Termux'ta paneli hazırlar ve başlatır.
 #
 #   bash scripts/bootstrap.sh            # temel kurulum + paneli başlat
-#   bash scripts/bootstrap.sh --hepsi    # + proot-distro, Debian, geliştirme araçları, Claude Code
+#   bash scripts/bootstrap.sh --hepsi    # + geliştirme araçları ve Claude Code (Termux'a, claude-code-android ile)
+#   bash scripts/bootstrap.sh --distro   # + isteğe bağlı: proot-distro ve Debian
 #   bash scripts/bootstrap.sh --servis   # + paneli termux-services ile otomatik başlat
 #
-# Linux ortamı ve diğer bileşenler sonradan panelde "Kurulum" sayfasından da kurulabilir.
+# Diğer bileşenler sonradan panelde "Kurulum" sayfasından da kurulabilir.
 set -euo pipefail
 
 PANEL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ALL=0
+DISTRO=0
 SERVICE=0
 for a in "$@"; do
   case "$a" in
     --hepsi | --all) ALL=1 ;;
+    --distro) DISTRO=1 ;;
     --servis | --service) SERVICE=1 ;;
     *) echo "Bilinmeyen seçenek: $a" >&2; exit 1 ;;
   esac
@@ -53,12 +56,24 @@ else
 fi
 
 if [ "$ALL" = 1 ]; then
-  step "Linux ortamı kuruluyor (proot-distro + Debian)"
-  pkg install "${PKG_OPTS[@]}" proot-distro termux-api
+  step "Geliştirme araçları ve Termux:API"
+  pkg install "${PKG_OPTS[@]}" git curl jq python openssh make clang util-linux termux-api
+  mkdir -p ~/projeler
+  if [ -x "$PREFIX/bin/claude" ] && [ -d ~/.local/share/claude/versions ]; then
+    step "Claude Code zaten kurulu: $(claude --version 2>/dev/null || echo '?')"
+  else
+    step "Claude Code kuruluyor (claude-code-android)"
+    INSTALLER="${TMPDIR:-$PREFIX/tmp}/claude-code-android-install.sh"
+    curl -fsSL https://raw.githubusercontent.com/ferrumclaudepilgrim/claude-code-android/main/install.sh -o "$INSTALLER"
+    # Betik iki soru sorar; burada etkileşimli bırakıyoruz, istersen önce: less "$INSTALLER"
+    bash "$INSTALLER"
+  fi
+fi
+
+if [ "$DISTRO" = 1 ]; then
+  step "İsteğe bağlı Linux ortamı (proot-distro + Debian)"
+  pkg install "${PKG_OPTS[@]}" proot-distro
   proot-distro list --quiet 2>/dev/null | grep -qx debian || proot-distro install debian
-  step "Debian içinde geliştirme araçları ve Claude Code"
-  proot-distro login debian --env DEBIAN_FRONTEND=noninteractive -- bash -lc \
-    'apt-get update && apt-get install -y git curl ca-certificates build-essential python3 python3-pip python3-venv nodejs npm && npm install -g @anthropic-ai/claude-code'
 fi
 
 if [ "$SERVICE" = 1 ]; then

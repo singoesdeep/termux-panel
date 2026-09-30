@@ -7,7 +7,7 @@ import { useApp, type JobMeta } from '../store';
 
 export interface SetupItem {
   id: string;
-  group: 'termux' | 'linux';
+  group: 'termux' | 'claude' | 'linux';
   title: string;
   desc: string;
   status: 'ok' | 'missing' | 'warn' | 'blocked';
@@ -34,7 +34,7 @@ const STATUS: Record<SetupItem['status'], { label: string; icon: string; cls: st
 export const bulkTodo = (items: SetupItem[]) => items.filter((i) => i.inBulk && i.status !== 'ok' && i.hasAction);
 
 export default function Setup() {
-  const { runJob, confirm } = useApp();
+  const { runJob, confirm, toast } = useApp();
   const [info, setInfo] = useState<SetupInfo | null>(null);
   const [err, setErr] = useState('');
 
@@ -53,7 +53,10 @@ export default function Setup() {
     load();
   }, [load]);
 
-  const afterJob = () => {
+  const afterJob = (j: JobMeta) => {
+    if (j.status === 'failed') toast(`Kurulum başarısız (çıkış kodu ${j.code ?? '-'}). Ayrıntı için İşler sayfasındaki çıktıya bak.`, 'err');
+    else if (j.status === 'killed') toast('Kurulum durduruldu', 'err');
+    else toast('Kurulum tamamlandı', 'ok');
     load();
     refreshEnvs().catch(() => {});
   };
@@ -133,7 +136,7 @@ export default function Setup() {
               <div className="muted" style={{ fontSize: 13.5 }}>
                 {todo.length
                   ? todo.map((t) => t.title).join(' → ')
-                  : 'Termux, Linux ortamı ve Claude Code kullanıma hazır.'}
+                  : 'Termux ve Claude Code kullanıma hazır.'}
               </div>
             </div>
             {todo.length > 0 && (
@@ -155,10 +158,11 @@ export default function Setup() {
           </div>
         </div>
         {section('termux', 'Termux')}
-        {section('linux', 'Linux ortamı ve AI araçları')}
+        {section('claude', 'Claude Code')}
+        {section('linux', 'Linux dağıtımları (isteğe bağlı)')}
         <div className="faint" style={{ fontSize: 12.5, margin: '16px 4px' }}>
           Depolama izni, node-pty ve otomatik başlatma toplu kuruluma dahil değildir: ilki telefonda onay ister, diğer ikisi paneli yeniden başlatmayı
-          gerektirir.
+          gerektirir. proot-distro ve dağıtımlar isteğe bağlıdır; panel ve Claude Code doğrudan Termux'ta çalışır.
         </div>
       </div>
     </>
