@@ -58,7 +58,6 @@ fi
 if [ "$ALL" = 1 ]; then
   step "Geliştirme araçları ve Termux:API"
   pkg install "${PKG_OPTS[@]}" git curl jq python openssh make clang util-linux termux-api
-  mkdir -p ~/projeler
   if [ -x "$PREFIX/bin/claude" ] && [ -d ~/.local/share/claude/versions ]; then
     step "Claude Code zaten kurulu: $(claude --version 2>/dev/null || echo '?')"
   else

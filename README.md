@@ -19,7 +19,7 @@ Varsayılan olarak yalnızca `127.0.0.1` adresini dinler ve token ile giriş ist
 | **Kısayollar** | Sık kullanılan komutları kaydet, tek dokunuşla arka planda ya da terminalde çalıştır. Her kısayol Termux'ta ya da bir distroda çalışabilir |
 | **Distrolar** | proot-distro: kurulu distrolar, imaj arayıp kurma, yedekle / geri yükle, sıfırla, yeniden adlandır, kaldır, çalışan oturumları görme ve kapatma |
 | **Cihaz** | Termux:API: pil, Wi-Fi, fener, titreşim, toast, bildirim, pano, TTS, parlaklık, konum, wake lock |
-| **Claude** | `claude rc` (Remote Control) servisi: Termux'ta klasör seçimi, başlat-durdur, oturum bağlantısı, canlı log |
+| **Claude** | Projeler: her proje klasörüne ayrı `claude rc` (Remote Control) servisi; başlat-durdur, oturum bağlantısı, canlı log |
 | **İşler** | Panelden başlatılan tüm uzun komutlar ve çıktıları |
 
 ## Kurulum (sıfırdan Termux)
@@ -43,7 +43,7 @@ Betik Termux paketlerini günceller; Node.js, git ve derleyiciyi kurar (Node zat
 
 Bağlantıyı telefonun tarayıcısında aç. Tarayıcı menüsünden **Ana ekrana ekle** dersen uygulama gibi tam ekran açılır.
 
-Geri kalan her şey panelde **Menü → Kurulum** sayfasından yapılabilir. Orada her bileşenin durumu görünür: depolama izni, Termux:API, termux-services, node-pty, otomatik başlatma, proje klasörü, geliştirme araçları, Claude Code ve isteğe bağlı olarak proot-distro / Debian. Bileşenler tek tek ya da **Eksikleri kur** ile tek seferde, canlı çıktıyla kurulur. Toplu kurulumda bir adım başarısız olursa iş orada durur ve başarısız olarak işaretlenir. Kurulum tamamlanmadıysa ana ekranda bir uyarı çıkar.
+Geri kalan her şey panelde **Menü → Kurulum** sayfasından yapılabilir. Orada her bileşenin durumu görünür: depolama izni, Termux:API, termux-services, node-pty, otomatik başlatma, geliştirme araçları, Claude Code ve isteğe bağlı olarak proot-distro / Debian. Bileşenler tek tek ya da **Eksikleri kur** ile tek seferde, canlı çıktıyla kurulur. Toplu kurulumda bir adım başarısız olursa iş orada durur ve başarısız olarak işaretlenir. Kurulum tamamlanmadıysa ana ekranda bir uyarı çıkar.
 
 > `node-pty` derlenemezse panel yine çalışır. Terminal, `script` komutuyla (`pkg install util-linux`) çalışan yedek moda geçer; bu modda terminal yeniden boyutlandırılamaz. Kurulum sayfasındaki "Yeniden derle" ile tekrar denenebilir.
 
@@ -59,9 +59,9 @@ Panel ve Claude Code doğrudan Termux'ta çalışır; proot-distro yalnızca ayr
 
 Komutlar `proot-distro login <ad> --bind … --work-dir <klasör> -- <komut>` ile çalıştırılır. Bir distro terminal sekmesi kapatıldığında oturumun tüm süreç ağacı `proot-distro kill` ile kapatılır. Distrolar sayfasındaki **Durdur**, o distronun bütün oturumlarını kapatır. Kurulu paket listesi dpkg veritabanından doğrudan okunur, bu yüzden hızlıdır. proot-distro bir proot içinden çalıştırılamadığı için, panel proot içinde çalışırken distro yönetimi kapalıdır.
 
-### Ortak proje klasörü
+### Distrolarla ortak klasör
 
-Termux'taki `~/projeler` klasörü Claude servisinin varsayılan çalışma klasörüdür ve her distro oturumuna (terminal, kısayollar, işler) `--bind` ile `/root/projeler` olarak bağlanır. Böylece aynı projeler distrolardan da görünür. Klasör yoksa bağlama yapılmaz; *Kurulum* sayfasındaki "Proje klasörü" adımı onu oluşturur. Başka klasörler için `config.json` içindeki `binds` listesini düzenle:
+Termux'taki `~/projeler` klasörü varsa her distro oturumuna (terminal, kısayollar, işler) `--bind` ile `/root/projeler` olarak bağlanır. Klasör yoksa bağlama yapılmaz. Başka klasörler için `config.json` içindeki `binds` listesini düzenle:
 
 ```json
 "binds": [{ "src": "~/projeler", "dst": "/root/projeler" }]
@@ -77,16 +77,22 @@ less install.sh
 bash install.sh
 ```
 
-**Menü → Claude** sayfası `claude rc` komutunu termux-services (runit) ile bir servis olarak kurar:
+### Projeler
 
-- Panelden bağımsız çalışır. Panel yeniden başlasa da sürer, çökerse 10 sn sonra yeniden başlar.
-- Çalışırken `termux-wake-lock` alır.
-- Oturum bağlantısı (`https://claude.ai/…`) logdan okunup sayfada gösterilir.
-- Loglar `$PREFIX/var/log/sv/claude-rc/` altında tutulur.
-- "Sahte terminal (TTY)" seçeneği komutu `script` ile (`util-linux`) bir pty içinde çalıştırır.
-- Eski sürümde distro içinde kurulmuş bir servis varsa sayfa bunu gösterir; **Kaydet ve yeniden başlat** onu Termux'a taşır.
+**Menü → Claude** sayfasında projeler listelenir. Her proje Termux'ta bir klasör ve ona bağlı ayrı bir `claude rc` servisidir (`claude-rc-<proje>`). Claude yalnızca o klasörde çalışır, diğer projelerini görmez. Birden çok proje aynı anda çalışabilir; claude.ai'de her biri ayrı oturum olarak görünür.
 
-İlk kez kullanmadan önce bir kez terminalden `claude` çalıştırıp giriş yap ve klasöre güven. Sayfadaki **Terminalde aç** düğmesi bunu yapar.
+- **Yeni proje:** Ad ver, klasör (varsayılan `~/<ad>`) oluşturulur.
+- **Var olan klasör:** Yolunu yaz ya da *Dosyalar*'da klasörün menüsünden **Claude projesi yap**'a dokun.
+- Home klasörünün kendisi (ya da onu içeren bir üst klasör) proje olamaz.
+- Eklenen klasör için Claude'un "bu klasöre güveniyor musun?" onayı `~/.claude.json`'da otomatik işaretlenir (yalnızca o klasör için).
+- Servisler panelden bağımsız çalışır: panel yeniden başlasa da sürer, çökerse 10 sn sonra yeniden başlar, çalışırken `termux-wake-lock` alır. "Termux açılınca başlat" her projede ayrı açılıp kapatılır.
+- Oturum bağlantısı (`https://claude.ai/…`) logdan okunup proje kartında gösterilir. Loglar `$PREFIX/var/log/sv/claude-rc-<proje>/` altında.
+- "Sahte terminal (TTY)" seçeneği komutu `script` ile (`util-linux`) bir pty içinde çalıştırır. Komut proje ayarlarından değiştirilebilir.
+- Projeyi kaldırmak servisi siler, klasöre dokunmaz. Eski sürümden kalan tek `claude-rc` servisi varsa sayfa onu kaldırmayı önerir.
+
+İlk kez kullanmadan önce bir kez terminalden `claude` çalıştırıp giriş yap. Sayfadaki **Terminalde aç** düğmesi bunu yapar.
+
+Servisler, sarmalayıcının `BUN_OPTIONS` değişkenine yazdığı göreli `--preload` yolunu temizleyerek başlar. Bu değişken bir claude oturumundan runit'e sızarsa, başka klasörde açılan `claude` "preload not found" hatasıyla hemen çıkıyor.
 
 ### Android 12+ phantom process killer
 

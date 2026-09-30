@@ -20,13 +20,22 @@ export interface Bind {
   dst: string;
 }
 
-/** `claude rc` servisinin ayarları (servis kurulunca kaydedilir) */
-export interface ClaudeRc {
-  /** Termux'taki çalışma klasörü (mutlak yol) */
+/** Claude projesi: Termux'taki bir klasör ve ona bağlı `claude rc` servisi (claude-rc-<id>) */
+export interface ClaudeProject {
+  /** Servis adında kullanılır: [a-z0-9-] */
+  id: string;
+  name: string;
+  /** Termux'taki mutlak yol */
+  path: string;
+  command: string;
+  tty: boolean;
+}
+
+/** Eski tek servis ayarı (claude-rc). Yalnızca taşıma için okunur. */
+export interface LegacyClaudeRc {
   cwd: string;
   command: string;
   tty: boolean;
-  /** Eski sürüm: servis bu distroda çalışıyordu. Yeniden kaydedilince kalkar. */
   distro?: string;
 }
 
@@ -37,7 +46,8 @@ export interface Config {
   auth: boolean;
   snippets: Snippet[];
   binds: Bind[];
-  claudeRc?: ClaudeRc;
+  projects: ClaudeProject[];
+  claudeRc?: LegacyClaudeRc;
 }
 
 export const CONFIG_DIR = process.env.TP_CONFIG_DIR || path.join(HOME, '.termux-panel');
@@ -64,6 +74,7 @@ function load(): Config {
     auth: stored.auth ?? true,
     snippets: stored.snippets ?? defaultSnippets,
     binds: stored.binds ?? [{ src: '~/projeler', dst: '/root/projeler' }],
+    projects: stored.projects ?? [],
     ...(stored.claudeRc ? { claudeRc: stored.claudeRc } : {}),
   };
   if (JSON.stringify(stored) !== JSON.stringify(cfg)) save(cfg);
@@ -86,8 +97,10 @@ function save(cfg: Config) {
 export const config = load();
 
 /** Ayarların bir kısmını değiştirip kaydeder (ortam değişkeni geçersiz kılmaları dosyaya yazılmaz). */
-export function updateConfig(patch: Partial<Pick<Config, 'snippets' | 'binds' | 'claudeRc'>>) {
+export function updateConfig(patch: Partial<Pick<Config, 'snippets' | 'binds' | 'projects' | 'claudeRc'>>) {
   Object.assign(config, patch);
+  // undefined → alanı dosyadan da kaldır
+  for (const [k, v] of Object.entries(patch)) if (v === undefined) delete (config as unknown as Record<string, unknown>)[k];
   let stored: Partial<Config> = {};
   try {
     stored = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));

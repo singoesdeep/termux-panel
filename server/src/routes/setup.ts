@@ -5,8 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import { phantomStatus } from '../android.js';
-import { config } from '../config.js';
-import { HOME, PREFIX, isTermux, resolvePath } from '../env.js';
+import { HOME, PREFIX, isTermux } from '../env.js';
 import { HttpError, run } from '../exec.js';
 import { startShellJob } from '../jobs.js';
 import { PD_BIN, listDistros, pdStatus } from '../targets.js';
@@ -194,20 +193,6 @@ async function buildItems(): Promise<Item[]> {
       detail: phantom.detail,
       help: phantom.help || undefined,
     },
-    ...config.binds.slice(0, 1).map((b): Item => {
-      const src = resolvePath(b.src);
-      return {
-        id: 'projects',
-        group: 'claude',
-        title: 'Proje klasörü',
-        desc: `Claude'un çalışacağı projeler için ${b.src}. Distro kurarsan orada da ${b.dst} olarak görünür. (config.json → binds)`,
-        status: fs.existsSync(src) ? 'ok' : 'missing',
-        detail: fs.existsSync(src) ? src : undefined,
-        command: `mkdir -p ${shq(src)}`,
-        actionLabel: 'Oluştur',
-        inBulk: true,
-      };
-    }),
     {
       id: 'devtools',
       group: 'claude',

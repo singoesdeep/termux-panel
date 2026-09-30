@@ -9,9 +9,10 @@ export const isTermux = Boolean(process.env.TERMUX_VERSION) || (process.env.PREF
 
 // Panel bir claude oturumundan başlatıldıysa bu değişkenler terminallere ve işlere geçip
 // orada açılan claude'u "iç içe oturum" sanmaya itmesin
-// (CLAUDE_CODE_OAUTH_TOKEN gibi kullanıcı ayarlarına dokunulmaz)
+// (CLAUDE_CODE_OAUTH_TOKEN gibi kullanıcı ayarlarına dokunulmaz). BUN_OPTIONS: claude sarmalayıcısı
+// buraya göreli bir --preload yolu yazar; başka klasörde açılan claude onu bulamayıp çıkar.
 for (const k of Object.keys(process.env)) {
-  if (k === 'CLAUDECODE' || k === 'CLAUDE_PID' || /^CLAUDE_CODE_(ENTRYPOINT|EXECPATH|SESSION_|CHILD_SESSION|MESSAGING_)/.test(k)) delete process.env[k];
+  if (k === 'CLAUDECODE' || k === 'CLAUDE_PID' || k === 'BUN_OPTIONS' || /^CLAUDE_CODE_(ENTRYPOINT|EXECPATH|SESSION_|CHILD_SESSION|MESSAGING_)/.test(k)) delete process.env[k];
 }
 
 export const PREFIX = process.env.PREFIX || (isTermux ? TERMUX_PREFIX : '/usr');

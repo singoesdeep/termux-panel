@@ -118,7 +118,7 @@ function Shell() {
     jobs: <Jobs />,
     distros: <Distros />,
     setup: <Setup />,
-    claude: <Claude />,
+    claude: <Claude params={params} />,
   };
   const inMore = MORE_NAV.some((m) => m.page === page) || page === 'more';
 

@@ -438,9 +438,16 @@ export default function Files({ params }: { params: URLSearchParams }) {
             </div>
             <div className="action-list">
               {menu.type === 'dir' ? (
-                <button onClick={() => (setMenu(null), go(full(menu)))}>
-                  <Icon name="folder" /> Aç
-                </button>
+                <>
+                  <button onClick={() => (setMenu(null), go(full(menu)))}>
+                    <Icon name="folder" /> Aç
+                  </button>
+                  {!inDistro && (
+                    <button onClick={() => (setMenu(null), navigate('claude', { add: full(menu) }))}>
+                      <Icon name="message" /> Claude projesi yap
+                    </button>
+                  )}
+                </>
               ) : (
                 <>
                   <button onClick={() => (setMenu(null), openFile(menu))}>
