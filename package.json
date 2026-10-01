@@ -1,6 +1,6 @@
 {
   "name": "termux-panel",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Termux için mobile-first web yönetim paneli",
   "private": true,
   "type": "module",
@@ -47,5 +47,8 @@
     "typescript": "^5.9.0",
     "vite": "^7.1.0",
     "rollup": "npm:@rollup/wasm-node@^4.40.0"
+  },
+  "allowScripts": {
+    "node-pty": true
   }
 }
