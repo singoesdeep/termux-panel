@@ -13,7 +13,7 @@ import Packages from './pages/Packages';
 import Processes from './pages/Processes';
 import Services from './pages/Services';
 import Setup from './pages/Setup';
-import Claude from './pages/Claude';
+import Projects from './pages/Projects';
 import Shortcuts from './pages/Shortcuts';
 import TerminalPage from './pages/Terminal';
 import { MORE_NAV } from './nav';
@@ -118,7 +118,8 @@ function Shell() {
     jobs: <Jobs />,
     distros: <Distros />,
     setup: <Setup />,
-    claude: <Claude params={params} />,
+    projects: <Projects params={params} />,
+    claude: <Projects params={params} />,
   };
   const inMore = MORE_NAV.some((m) => m.page === page) || page === 'more';
 

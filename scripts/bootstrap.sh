@@ -3,6 +3,7 @@
 #
 #   bash scripts/bootstrap.sh            # temel kurulum + paneli başlat
 #   bash scripts/bootstrap.sh --hepsi    # + geliştirme araçları ve Claude Code (Termux'a, claude-code-android ile)
+#   bash scripts/bootstrap.sh --antigravity  # + Antigravity CLI (agy, Termux derlemesi)
 #   bash scripts/bootstrap.sh --distro   # + isteğe bağlı: proot-distro ve Debian
 #   bash scripts/bootstrap.sh --servis   # + paneli termux-services ile otomatik başlat
 #
@@ -12,11 +13,13 @@ set -euo pipefail
 PANEL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ALL=0
 DISTRO=0
+AGY=0
 SERVICE=0
 for a in "$@"; do
   case "$a" in
     --hepsi | --all) ALL=1 ;;
     --distro) DISTRO=1 ;;
+    --antigravity | --agy) AGY=1 ;;
     --servis | --service) SERVICE=1 ;;
     *) echo "Bilinmeyen seçenek: $a" >&2; exit 1 ;;
   esac
@@ -66,6 +69,21 @@ if [ "$ALL" = 1 ]; then
     curl -fsSL https://raw.githubusercontent.com/ferrumclaudepilgrim/claude-code-android/main/install.sh -o "$INSTALLER"
     # Betik iki soru sorar; burada etkileşimli bırakıyoruz, istersen önce: less "$INSTALLER"
     bash "$INSTALLER"
+  fi
+fi
+
+if [ "$AGY" = 1 ]; then
+  if [ -x "$PREFIX/bin/agy" ]; then
+    step "Antigravity CLI zaten kurulu: $(agy --version 2>/dev/null || echo '?')"
+  else
+    step "Antigravity CLI kuruluyor (wallentx/antigravity-cli-termux)"
+    [ -x "$PREFIX/glibc/lib/ld-linux-aarch64.so.1" ] || { pkg install "${PKG_OPTS[@]}" glibc-repo && pkg update -y && pkg install "${PKG_OPTS[@]}" glibc; }
+    pkg install "${PKG_OPTS[@]}" resolv-conf ca-certificates
+    grep -q atomics /proc/cpuinfo || command -v qemu-aarch64 >/dev/null || pkg install "${PKG_OPTS[@]}" qemu-user-aarch64
+    INSTALLER="${TMPDIR:-$PREFIX/tmp}/antigravity-termux-install.sh"
+    curl -fsSL https://raw.githubusercontent.com/wallentx/antigravity-cli-termux/dev/install.sh -o "$INSTALLER"
+    AGY_INSTALL_SKIP_LAUNCH=1 bash "$INSTALLER"
+    rm -f "$PREFIX/tmp/antigravity-termux-standalone.tar.gz"
   fi
 fi
 

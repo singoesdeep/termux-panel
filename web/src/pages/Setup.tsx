@@ -7,7 +7,7 @@ import { useApp, type JobMeta } from '../store';
 
 export interface SetupItem {
   id: string;
-  group: 'termux' | 'claude' | 'linux';
+  group: 'termux' | 'ai' | 'linux';
   title: string;
   desc: string;
   status: 'ok' | 'missing' | 'warn' | 'blocked';
@@ -136,7 +136,7 @@ export default function Setup() {
               <div className="muted" style={{ fontSize: 13.5 }}>
                 {todo.length
                   ? todo.map((t) => t.title).join(' → ')
-                  : 'Termux ve Claude Code kullanıma hazır.'}
+                  : 'Termux temel bileşenleri hazır.'}
               </div>
             </div>
             {todo.length > 0 && (
@@ -158,11 +158,12 @@ export default function Setup() {
           </div>
         </div>
         {section('termux', 'Termux')}
-        {section('claude', 'Claude Code')}
+        {section('ai', 'AI araçları (istediğini kur)')}
         {section('linux', 'Linux dağıtımları (isteğe bağlı)')}
         <div className="faint" style={{ fontSize: 12.5, margin: '16px 4px' }}>
           Depolama izni, node-pty ve otomatik başlatma toplu kuruluma dahil değildir: ilki telefonda onay ister, diğer ikisi paneli yeniden başlatmayı
-          gerektirir. proot-distro ve dağıtımlar isteğe bağlıdır; panel ve Claude Code doğrudan Termux'ta çalışır.
+          gerektirir. AI araçları (Claude Code, Antigravity) ve proot-distro isteğe bağlıdır; istediğini kendi düğmesiyle kur. Hepsi doğrudan Termux'ta
+          çalışır.
         </div>
       </div>
     </>

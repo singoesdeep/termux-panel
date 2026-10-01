@@ -3,6 +3,8 @@
 Termux'u telefondan tarayıcı üzerinden yönetmek için **mobile-first** web paneli.
 Backend: Node.js + TypeScript (Fastify, WebSocket) · Frontend: React + TypeScript (Vite) · Terminal: xterm.js + gerçek PTY.
 
+Claude Code ve Antigravity CLI doğrudan Termux'a kurulur; her proje klasöründe uzaktan kontrol oturumu (`claude rc`, `agy --remote-control`) arka plan servisi olarak çalışır, telefondan ya da başka bir cihazdan bağlanırsın. proot-distro desteği isteğe bağlıdır.
+
 Varsayılan olarak yalnızca `127.0.0.1` adresini dinler ve token ile giriş ister.
 
 ## Özellikler
@@ -19,7 +21,7 @@ Varsayılan olarak yalnızca `127.0.0.1` adresini dinler ve token ile giriş ist
 | **Kısayollar** | Sık kullanılan komutları kaydet, tek dokunuşla arka planda ya da terminalde çalıştır. Her kısayol Termux'ta ya da bir distroda çalışabilir |
 | **Distrolar** | proot-distro: kurulu distrolar, imaj arayıp kurma, yedekle / geri yükle, sıfırla, yeniden adlandır, kaldır, çalışan oturumları görme ve kapatma |
 | **Cihaz** | Termux:API: pil, Wi-Fi, fener, titreşim, toast, bildirim, pano, TTS, parlaklık, konum, wake lock |
-| **Claude** | Projeler: her proje klasörüne ayrı `claude rc` (Remote Control) servisi; başlat-durdur, oturum bağlantısı, canlı log |
+| **Projeler** | Her proje klasöründe Claude Code (`claude rc`) ve/veya Antigravity (`agy --remote-control`) uzaktan kontrol servisi; başlat-durdur, oturum bağlantısı, canlı log |
 | **İşler** | Panelden başlatılan tüm uzun komutlar ve çıktıları |
 
 ## Kurulum (sıfırdan Termux)
@@ -30,6 +32,7 @@ Proje klasörünü Termux'a kopyaladıktan sonra:
 cd ~/termux-panel
 bash scripts/bootstrap.sh            # temel kurulum + paneli başlatır
 bash scripts/bootstrap.sh --hepsi    # + geliştirme araçları ve Claude Code (Termux'a)
+bash scripts/bootstrap.sh --antigravity  # + Antigravity CLI (agy)
 bash scripts/bootstrap.sh --distro   # + isteğe bağlı: proot-distro ve Debian
 bash scripts/bootstrap.sh --servis   # + Termux açılınca panel otomatik başlasın
 ```
@@ -43,7 +46,7 @@ Betik Termux paketlerini günceller; Node.js, git ve derleyiciyi kurar (Node zat
 
 Bağlantıyı telefonun tarayıcısında aç. Tarayıcı menüsünden **Ana ekrana ekle** dersen uygulama gibi tam ekran açılır.
 
-Geri kalan her şey panelde **Menü → Kurulum** sayfasından yapılabilir. Orada her bileşenin durumu görünür: depolama izni, Termux:API, termux-services, node-pty, otomatik başlatma, geliştirme araçları, Claude Code ve isteğe bağlı olarak proot-distro / Debian. Bileşenler tek tek ya da **Eksikleri kur** ile tek seferde, canlı çıktıyla kurulur. Toplu kurulumda bir adım başarısız olursa iş orada durur ve başarısız olarak işaretlenir. Kurulum tamamlanmadıysa ana ekranda bir uyarı çıkar.
+Geri kalan her şey panelde **Menü → Kurulum** sayfasından yapılabilir. Orada her bileşenin durumu görünür: depolama izni, Termux:API, termux-services, node-pty, otomatik başlatma, geliştirme araçları, AI araçları (Claude Code, Antigravity CLI) ve isteğe bağlı olarak proot-distro / Debian. AI araçları toplu kuruluma dahil değildir; istediğini kendi düğmesiyle kurarsın. Bileşenler tek tek ya da **Eksikleri kur** ile tek seferde, canlı çıktıyla kurulur. Toplu kurulumda bir adım başarısız olursa iş orada durur ve başarısız olarak işaretlenir. Kurulum tamamlanmadıysa ana ekranda bir uyarı çıkar.
 
 > `node-pty` derlenemezse panel yine çalışır. Terminal, `script` komutuyla (`pkg install util-linux`) çalışan yedek moda geçer; bu modda terminal yeniden boyutlandırılamaz. Kurulum sayfasındaki "Yeniden derle" ile tekrar denenebilir.
 
@@ -67,7 +70,7 @@ Termux'taki `~/projeler` klasörü varsa her distro oturumuna (terminal, kısayo
 "binds": [{ "src": "~/projeler", "dst": "/root/projeler" }]
 ```
 
-## Claude Code (Remote Control)
+## Claude Code
 
 Claude Code doğrudan Termux'ta çalışır. [claude-code-android](https://github.com/ferrumclaudepilgrim/claude-code-android) betiğiyle kurulur: Anthropic'in resmi linux-arm64 sürümü glibc-runner ile yamalanır, `$PREFIX/bin/claude` sarmalayıcısı günde bir kez güncellemeleri kontrol eder. Kurulum sayfasındaki "Claude Code" adımı betiği indirip soruları otomatik yanıtlar (paketler ayrı adımlarda kurulduğu için ikisine de "hayır") ve sonunda `claude --version` ile doğrular. Elle kurmak istersen:
 
@@ -77,20 +80,27 @@ less install.sh
 bash install.sh
 ```
 
-### Projeler
+## Antigravity CLI
 
-**Menü → Claude** sayfasında projeler listelenir. Her proje Termux'ta bir klasör ve ona bağlı ayrı bir `claude rc` servisidir (`claude-rc-<proje>`). Claude yalnızca o klasörde çalışır, diğer projelerini görmez. Birden çok proje aynı anda çalışabilir; claude.ai'de her biri ayrı oturum olarak görünür.
+Google'ın terminal ajanı `agy`, [wallentx/antigravity-cli-termux](https://github.com/wallentx/antigravity-cli-termux) derlemesiyle doğrudan Termux'a kurulur (`$PREFIX/bin/agy`, glibc ile çalışır). Kurulum sayfasındaki "Antigravity CLI" adımı önkoşulları (glibc, resolv-conf, gerekirse qemu) kurar, betiği etkileşimsiz çalıştırır ve `agy --version` ile doğrular. Kendini `agy update` ile günceller.
 
-- **Yeni proje:** Ad ver, klasör (varsayılan `~/<ad>`) oluşturulur.
-- **Var olan klasör:** Yolunu yaz ya da *Dosyalar*'da klasörün menüsünden **Claude projesi yap**'a dokun.
+Antigravity'nin resmi arka plan servisi (`agy remote-control start`) systemd ister, Termux'ta yoktur. Panel bunun yerine `agy --remote-control`'ü proje klasöründe runit altında çalıştırır; bağlantı antigravity.google.com panosunda görünür.
+
+## Projeler
+
+**Menü → Projeler** sayfasında projeler listelenir. Her proje Termux'ta bir klasördür; içinde Claude Code, Antigravity ya da ikisi birden çalışabilir. Her (proje, ajan) çifti ayrı bir servistir: `claude-rc-<proje>`, `agy-rc-<proje>`. Ajan yalnızca o klasörde çalışır, diğer projelerini görmez.
+
+- **Yeni proje:** Ad ver, klasör (varsayılan `~/<ad>`) oluşturulur, ajanları seç.
+- **Var olan klasör:** Yolunu yaz ya da *Dosyalar*'da klasörün menüsünden **Proje yap**'a dokun.
+- Sonradan projeye diğer ajanı ekleyebilir ya da çıkarabilirsin.
 - Home klasörünün kendisi (ya da onu içeren bir üst klasör) proje olamaz.
-- Eklenen klasör için Claude'un "bu klasöre güveniyor musun?" onayı `~/.claude.json`'da otomatik işaretlenir (yalnızca o klasör için).
-- Servisler panelden bağımsız çalışır: panel yeniden başlasa da sürer, çökerse 10 sn sonra yeniden başlar, çalışırken `termux-wake-lock` alır. "Termux açılınca başlat" her projede ayrı açılıp kapatılır.
-- Oturum bağlantısı (`https://claude.ai/…`) logdan okunup proje kartında gösterilir. Loglar `$PREFIX/var/log/sv/claude-rc-<proje>/` altında.
-- "Sahte terminal (TTY)" seçeneği komutu `script` ile (`util-linux`) bir pty içinde çalıştırır. Komut proje ayarlarından değiştirilebilir.
-- Projeyi kaldırmak servisi siler, klasöre dokunmaz. Eski sürümden kalan tek `claude-rc` servisi varsa sayfa onu kaldırmayı önerir.
+- Claude için klasör güven onayı `~/.claude.json`'da otomatik işaretlenir (yalnızca o klasör için). Antigravity'nin güven ayarının biçimi belgelenmediği için panel ona dokunmaz: servis ilk açılışta güven sorusunda bekler. Her yeni projede bir kez kartındaki **Terminalde aç** ile `agy`'yi açıp soruyu yanıtla.
+- Servisler panelden bağımsız çalışır: panel yeniden başlasa da sürer, çökerse 10 sn sonra yeniden başlar, çalışırken `termux-wake-lock` alır. "Termux açılınca başlat" her ajan için ayrı açılıp kapatılır.
+- Oturum bağlantısı logdan okunup kartta gösterilir. Loglar `$PREFIX/var/log/sv/<servis>/` altında.
+- "Sahte terminal (TTY)" seçeneği komutu `script` ile (`util-linux`) bir pty içinde çalıştırır. Komut ajan ayarlarından değiştirilebilir.
+- Projeyi kaldırmak servisleri siler, klasöre dokunmaz. Eski sürümden kalan tek `claude-rc` servisi varsa sayfa onu kaldırmayı önerir.
 
-İlk kez kullanmadan önce bir kez terminalden `claude` çalıştırıp giriş yap. Sayfadaki **Terminalde aç** düğmesi bunu yapar.
+İlk kez kullanmadan önce her ajan için bir kez terminalden `claude` / `agy` çalıştırıp giriş yap. Sayfadaki **Terminalde aç** düğmeleri bunu yapar.
 
 Servisler, sarmalayıcının `BUN_OPTIONS` değişkenine yazdığı göreli `--preload` yolunu temizleyerek başlar. Bu değişken bir claude oturumundan runit'e sızarsa, başka klasörde açılan `claude` "preload not found" hatasıyla hemen çıkıyor.
 
@@ -155,7 +165,7 @@ server/src/
   targets.ts        Ortamlar: Termux ya da proot-distro container'ı, komut sarmalama, ortak klasörler
   android.ts        Android sürümü, phantom process killer kontrolü
   jobs.ts           Uzun süren komutlar + WebSocket ile canlı çıktı
-  routes/           system, files, packages, processes, services, devtools, device, distros, setup, claude, misc
+  routes/           system, files, packages, processes, services, devtools, device, distros, setup, projects, misc
 web/src/
   App.tsx           Giriş ekranı, gezinme (mobilde alt bar, geniş ekranda yan menü)
   store.tsx         Toast, onay/soru diyalogları, iş takibi

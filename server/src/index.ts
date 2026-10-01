@@ -10,7 +10,7 @@ import websocket from '@fastify/websocket';
 import Fastify, { type FastifyRequest } from 'fastify';
 import { CONFIG_DIR, config } from './config.js';
 import { HttpError } from './exec.js';
-import claudeRoutes from './routes/claude.js';
+import projectRoutes from './routes/projects.js';
 import deviceRoutes from './routes/device.js';
 import distroRoutes from './routes/distros.js';
 import devtoolRoutes from './routes/devtools.js';
@@ -104,7 +104,7 @@ await app.register(devtoolRoutes);
 await app.register(deviceRoutes);
 await app.register(distroRoutes);
 await app.register(setupRoutes);
-await app.register(claudeRoutes);
+await app.register(projectRoutes);
 await app.register(miscRoutes);
 
 // ---- Arayüz ----

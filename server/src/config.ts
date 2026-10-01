@@ -20,15 +20,25 @@ export interface Bind {
   dst: string;
 }
 
-/** Claude projesi: Termux'taki bir klasör ve ona bağlı `claude rc` servisi (claude-rc-<id>) */
-export interface ClaudeProject {
+export type AgentId = 'claude' | 'agy';
+
+/** Bir projede çalışan AI aracının uzaktan kontrol servisi */
+export interface AgentConf {
+  command: string;
+  tty: boolean;
+}
+
+/**
+ * Proje: Termux'taki bir klasör. Her ajan (Claude Code, Antigravity) için ayrı bir runit
+ * servisi vardır: claude-rc-<id>, agy-rc-<id>.
+ */
+export interface Project {
   /** Servis adında kullanılır: [a-z0-9-] */
   id: string;
   name: string;
   /** Termux'taki mutlak yol */
   path: string;
-  command: string;
-  tty: boolean;
+  agents: Partial<Record<AgentId, AgentConf>>;
 }
 
 /** Eski tek servis ayarı (claude-rc). Yalnızca taşıma için okunur. */
@@ -46,7 +56,7 @@ export interface Config {
   auth: boolean;
   snippets: Snippet[];
   binds: Bind[];
-  projects: ClaudeProject[];
+  projects: Project[];
   claudeRc?: LegacyClaudeRc;
 }
 
@@ -59,6 +69,13 @@ const defaultSnippets: Snippet[] = [
   { id: 'ip', name: 'IP adreslerim', command: 'ip -brief addr 2>/dev/null || ifconfig' },
   { id: 'du', name: 'Home klasör boyutları', command: 'du -sh ~/* ~/.[!.]* 2>/dev/null | sort -h | tail -20' },
 ];
+
+/** Önceki sürüm: proje yalnızca Claude içindi (command/tty doğrudan projede) */
+function migrateProject(p: Project & { command?: string; tty?: boolean }): Project {
+  if (p.agents) return p;
+  const { command, tty, ...rest } = p;
+  return { ...rest, agents: { claude: { command: command ?? 'claude rc', tty: tty !== false } } };
+}
 
 function load(): Config {
   let stored: Partial<Config> = {};
@@ -74,7 +91,7 @@ function load(): Config {
     auth: stored.auth ?? true,
     snippets: stored.snippets ?? defaultSnippets,
     binds: stored.binds ?? [{ src: '~/projeler', dst: '/root/projeler' }],
-    projects: stored.projects ?? [],
+    projects: (stored.projects ?? []).map(migrateProject),
     ...(stored.claudeRc ? { claudeRc: stored.claudeRc } : {}),
   };
   if (JSON.stringify(stored) !== JSON.stringify(cfg)) save(cfg);

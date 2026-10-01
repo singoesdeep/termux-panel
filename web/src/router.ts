@@ -14,6 +14,8 @@ export type Page =
   | 'jobs'
   | 'distros'
   | 'setup'
+  | 'projects'
+  /** Eski adres: #/claude → Projeler */
   | 'claude';
 
 export interface Route {

@@ -29,7 +29,7 @@ type Status = 'ok' | 'missing' | 'warn' | 'blocked';
 
 interface Item {
   id: string;
-  group: 'termux' | 'claude' | 'linux';
+  group: 'termux' | 'ai' | 'linux';
   title: string;
   desc: string;
   status: Status;
@@ -108,6 +108,44 @@ export function claudeState(): { installed: boolean; npm: boolean; version: stri
   };
 }
 
+/**
+ * Antigravity CLI (agy): Google'ın linux-arm64 sürümünün Termux derlemesi. Betik $PREFIX/bin'e
+ * agy (yükleyici) ve agy.va39 (glibc ile çalışan ikili) koyar; sonunda agy'yi başlatmak ister,
+ * AGY_INSTALL_SKIP_LAUNCH ile bu atlanır. Önkoşullar (glibc, resolv-conf, LSE yoksa qemu)
+ * betik hata vermeden önce kurulur.
+ */
+const AGY_INSTALL_URL = 'https://raw.githubusercontent.com/wallentx/antigravity-cli-termux/dev/install.sh';
+const agyInstallCmd = () => {
+  const f = '"${TMPDIR:-$PREFIX/tmp}/antigravity-termux-install.sh"';
+  return [
+    `[ -x "$PREFIX/glibc/lib/ld-linux-aarch64.so.1" ] || { ${PKG_INSTALL} glibc-repo && pkg update -y && ${PKG_INSTALL} glibc; } || exit 1`,
+    `[ -r "$PREFIX/etc/resolv.conf" ] && [ -s "$PREFIX/etc/tls/cert.pem" ] || ${PKG_INSTALL} resolv-conf ca-certificates || exit 1`,
+    `grep -q atomics /proc/cpuinfo || command -v qemu-aarch64 >/dev/null || ${PKG_INSTALL} qemu-user-aarch64 || exit 1`,
+    `curl -fsSL ${shq(AGY_INSTALL_URL)} -o ${f} || exit 1`,
+    // İlerleme çubuğu \r ile aynı satırı yeniler; iş çıktısında yüzlerce satır olmasın
+    `AGY_INSTALL_SKIP_LAUNCH=1 bash ${f} </dev/null 2>&1 | tr '\\r' '\\n' | grep --line-buffered -v '%.*M /'`,
+    `rc=\${PIPESTATUS[0]}`,
+    `[ "$rc" = 0 ] || { echo; echo "Kurulum betiği hata verdi (çıkış kodu $rc)"; exit "$rc"; }`,
+    // Betik indirilen arşivi (~55 MB) bırakıyor
+    'rm -f "$PREFIX/tmp/antigravity-termux-standalone.tar.gz"',
+    `"$PREFIX/bin/agy" --version || { echo 'agy çalıştırılamadı'; exit 1; }`,
+  ].join('\n');
+};
+
+let agyVersion: { mtime: number; version: string | null } | null = null;
+
+/** Termux'taki Antigravity CLI kurulumu */
+export async function agyState(): Promise<{ installed: boolean; version: string | null }> {
+  const bin = path.join(PREFIX, 'bin/agy');
+  const st = await fsp.stat(path.join(PREFIX, 'bin/agy.va39')).catch(() => null);
+  if (!st || !fs.existsSync(bin)) return { installed: false, version: null };
+  if (agyVersion?.mtime !== st.mtimeMs) {
+    const r = await run(bin, ['--version'], { timeout: 10000, env: { HOME } });
+    agyVersion = { mtime: st.mtimeMs, version: r.code === 0 ? r.stdout.trim().split('\n')[0] || null : null };
+  }
+  return { installed: true, version: agyVersion.version };
+}
+
 async function buildItems(): Promise<Item[]> {
   const [pkgs, distros, upgradable, phantom] = await Promise.all([
     termuxInstalled(),
@@ -120,6 +158,7 @@ async function buildItems(): Promise<Item[]> {
   const distro = distros.find((d) => d.name === DEFAULT_DISTRO) ?? distros[0];
   const missingDev = DEV_PKGS.filter((p) => !pkgs.has(p));
   const cc = claudeState();
+  const agy = await agyState();
   const arm64 = os.arch() === 'arm64';
   const serviceDir = path.join(PREFIX, 'var/service/termux-panel');
 
@@ -195,7 +234,7 @@ async function buildItems(): Promise<Item[]> {
     },
     {
       id: 'devtools',
-      group: 'claude',
+      group: 'ai',
       title: 'Geliştirme araçları',
       desc: `Claude'un Bash aracının beklediği temel araçlar: ${DEV_PKGS.join(', ')}`,
       status: missingDev.length ? 'missing' : 'ok',
@@ -206,21 +245,30 @@ async function buildItems(): Promise<Item[]> {
     },
     {
       id: 'claude',
-      group: 'claude',
+      group: 'ai',
       title: 'Claude Code',
       desc: 'claude-code-android betiğiyle doğrudan Termux\'a kurulur (resmi linux-arm64 sürümü + glibc-runner, ~250 MB). Kendini günde bir kez günceller. İlk çalıştırmada terminalde giriş yapman gerekir.',
       status: !arm64 ? 'blocked' : cc.installed ? (cc.loggedIn ? 'ok' : 'warn') : cc.npm ? 'warn' : 'missing',
       detail: !arm64
         ? `Yalnızca aarch64 (arm64) cihazlarda çalışır; bu cihaz: ${os.arch()}`
         : cc.installed
-          ? `Sürüm ${cc.version}${cc.loggedIn ? '' : ' · henüz giriş yapılmamış: Claude sayfasından terminalde aç'}`
+          ? `Sürüm ${cc.version}${cc.loggedIn ? '' : ' · henüz giriş yapılmamış: terminalde claude çalıştır'}`
           : cc.npm
             ? 'Eski npm kurulumu bulundu: betik taşıma (migrate.sh) komutlarını gösterir'
             : undefined,
       // Kuruluysa (giriş eksik olsa da) yeniden kurma
       command: cc.installed ? undefined : claudeInstallCmd(),
       actionLabel: 'Kur',
-      inBulk: arm64 && !cc.installed,
+    },
+    {
+      id: 'agy',
+      group: 'ai',
+      title: 'Antigravity CLI (agy)',
+      desc: 'Google\'ın terminal ajanı. Termux derlemesi (wallentx/antigravity-cli-termux) doğrudan Termux\'a kurulur (~55 MB indirme, glibc ile çalışır). İlk çalıştırmada terminalde Google hesabınla giriş yapman gerekir.',
+      status: !arm64 ? 'blocked' : agy.installed ? 'ok' : 'missing',
+      detail: !arm64 ? `Yalnızca aarch64 (arm64) cihazlarda çalışır; bu cihaz: ${os.arch()}` : agy.installed ? `Sürüm ${agy.version ?? '?'}` : undefined,
+      command: agy.installed ? undefined : agyInstallCmd(),
+      actionLabel: 'Kur',
     },
     {
       id: 'proot-distro',
@@ -260,7 +308,7 @@ export default async function setupRoutes(app: FastifyInstance) {
     if (!isTermux) throw new HttpError(400, 'Kurulum yalnızca panel Termux\'ta çalışırken yapılabilir');
     const items = await buildItems();
     if (req.params.id === 'all') {
-      // Sırası önemli: paketler → proje klasörü → araçlar → Claude Code. Durum "blocked" olanlar
+      // Sırası önemli: paketler → araçlar. AI araçları (Claude, Antigravity) isteğe göre tek tek kurulur. Durum "blocked" olanlar
       // da dahil edilir; önceki adımlar onları çözer. Her adım alt kabukta çalışır; biri
       // başarısız olursa iş o adımın çıkış koduyla biter (sonraki adımlara geçilmez).
       const todo = items.filter((i) => i.inBulk && i.status !== 'ok' && i.command);

@@ -443,8 +443,8 @@ export default function Files({ params }: { params: URLSearchParams }) {
                     <Icon name="folder" /> Aç
                   </button>
                   {!inDistro && (
-                    <button onClick={() => (setMenu(null), navigate('claude', { add: full(menu) }))}>
-                      <Icon name="message" /> Claude projesi yap
+                    <button onClick={() => (setMenu(null), navigate('projects', { add: full(menu) }))}>
+                      <Icon name="message" /> Proje yap (Claude / Antigravity)
                     </button>
                   )}
                 </>
