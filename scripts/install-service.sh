@@ -1,36 +1,61 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# Termux Panel'i termux-services ile arka plan servisi olarak kurar.
+# Termux Panel'i termux-services ile arka plan servisi olarak kurar ve başlatır.
+# Termux açıldığında panel kendiliğinden başlar. Panel zaten servisse yeniden başlatır
+# (güncellemeden sonra yeni sürüm devreye girsin).
 # Kullanım: bash scripts/install-service.sh
 set -e
 PANEL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-SVDIR="${SVDIR:-$PREFIX/var/service}"
+export SVDIR="${SVDIR:-$PREFIX/var/service}"
+NAME=termux-panel
 
 if ! command -v sv >/dev/null; then
-  echo "termux-services kurulu değil. Kuruluyor..."
-  pkg install -y termux-services
-  echo "Kurulum bitti. Termux'u tamamen kapatıp yeniden aç, sonra bu betiği tekrar çalıştır."
-  exit 0
+  echo "termux-services kuruluyor..."
+  pkg install -y termux-services </dev/null
+fi
+
+# termux-services, servis yöneticisini (runsvdir) Termux oturumu açılırken başlatır. Paket
+# yeni kurulduysa Termux'u yeniden başlatmak yerine burada başlat.
+if ! pgrep -x runsvdir >/dev/null; then
+  echo "Servis yöneticisi başlatılıyor..."
+  service-daemon start >/dev/null
+  sleep 1
 fi
 
 [ -f "$PANEL_DIR/dist/server/index.js" ] || (cd "$PANEL_DIR" && npm run build)
 
-mkdir -p "$SVDIR/termux-panel/log"
-cat > "$SVDIR/termux-panel/run" <<RUN
-#!/data/data/com.termux/files/usr/bin/sh
+DIR="$SVDIR/$NAME"
+mkdir -p "$DIR/log"
+cat > "$DIR/run" <<RUN
+#!$PREFIX/bin/sh
 cd "$PANEL_DIR"
 export TP_SERVICE=1
 exec node dist/server/index.js 2>&1
 RUN
-cat > "$SVDIR/termux-panel/log/run" <<'LOG'
-#!/data/data/com.termux/files/usr/bin/sh
-mkdir -p "$PREFIX/var/log/sv/termux-panel"
-exec svlogd -tt "$PREFIX/var/log/sv/termux-panel"
+cat > "$DIR/log/run" <<LOG
+#!$PREFIX/bin/sh
+mkdir -p "$PREFIX/var/log/sv/$NAME"
+exec svlogd -tt "$PREFIX/var/log/sv/$NAME"
 LOG
-chmod +x "$SVDIR/termux-panel/run" "$SVDIR/termux-panel/log/run"
+chmod +x "$DIR/run" "$DIR/log/run"
+# Termux açılınca başlasın
+rm -f "$DIR/down"
 
-sv-enable termux-panel 2>/dev/null || true
+# runsvdir yeni servisi birkaç saniye içinde fark eder
+for _ in $(seq 1 40); do
+  [ -e "$DIR/supervise/ok" ] && break
+  sleep 0.25
+done
+[ -e "$DIR/supervise/ok" ] || { echo "Servis yöneticisi servisi görmedi. Termux'u kapatıp açtıktan sonra tekrar dene." >&2; exit 1; }
+
+# Elle (npm start) çalışan bir panel portu tutuyorsa servis başlayamaz
+if pgrep -f "node dist/server/index.js" >/dev/null && ! sv status "$NAME" | grep -q '^run:'; then
+  echo "Not: Elle başlatılmış bir panel çalışıyor görünüyor. Onu kapat (Ctrl+C); servis birkaç saniye içinde devralır."
+fi
+
+if sv status "$NAME" | grep -q '^run:'; then
+  sv restart "$NAME" >/dev/null
+else
+  sv up "$NAME"
+fi
 sleep 2
-sv up termux-panel
-echo "Servis kuruldu. Durum: $(sv status termux-panel)"
-echo "Not: Paneli elle (npm start) çalıştırıyorsan onu kapat; servis birkaç saniye içinde devralır."
-echo "Token: $(grep -o '"token": *"[^"]*"' ~/.termux-panel/config.json | cut -d'"' -f4)"
+echo "Servis: $(sv status "$NAME")"

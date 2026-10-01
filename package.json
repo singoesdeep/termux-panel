@@ -1,6 +1,6 @@
 {
   "name": "termux-panel",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Termux için mobile-first web yönetim paneli",
   "private": true,
   "type": "module",
@@ -15,7 +15,8 @@
     "build:server": "tsc -p server/tsconfig.json",
     "build:web": "vite build",
     "typecheck": "tsc -p server/tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
-    "start": "node dist/server/index.js"
+    "start": "node dist/server/index.js",
+    "pack": "npm run build && bash scripts/pack.sh"
   },
   "engines": {
     "node": ">=18"

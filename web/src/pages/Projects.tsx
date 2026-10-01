@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, del, errMsg, fmtDuration, post, put, shq } from '../api';
 import { Icon } from '../components/Icon';
+import { FolderPicker } from '../components/FolderPicker';
 import { Empty, Header, IconButton, Sheet, Spinner, Switch, useInterval } from '../components/ui';
 import { navigate } from '../router';
 import { useApp, type JobMeta } from '../store';
@@ -51,17 +52,17 @@ interface Info {
   phantom: { status: 'ok' | 'warn'; detail: string };
 }
 
-type Form = { mode: 'new' | 'existing'; name: string; path: string; agents: AgentId[]; start: boolean; pathTouched: boolean };
+type Form = { name: string; path: string; agents: AgentId[]; start: boolean };
 
 const AGENT_IDS: AgentId[] = ['claude', 'agy'];
 /** Terminalde etkileşimli açmak için komut (giriş, klasör güveni) */
 const CLI: Record<AgentId, string> = { claude: 'claude', agy: 'agy' };
 
-const slugify = (s: string) =>
-  s
-    .toLowerCase()
-    .replace(/[^a-z0-9ğüşıöç._-]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+const basename = (p: string) => p.split('/').filter(Boolean).pop() ?? '';
+
+/** Proje olamayacak klasörler (sunucudaki kontrolle aynı) */
+const rejectDir = (p: string, home: string) =>
+  p === home || home.startsWith(`${p}/`) || p === '/' ? 'Home ya da onu içeren bir klasör proje olamaz: projeye ait bir alt klasöre gir ya da yeni klasör oluştur.' : null;
 
 const lsGet = (k: string) => {
   try {
@@ -84,6 +85,8 @@ export default function Projects({ params }: { params: URLSearchParams }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [form, setForm] = useState<Form | null>(null);
+  /** Klasör seçici: yeni proje için (form yok) ya da formdaki klasörü değiştirmek için */
+  const [picking, setPicking] = useState(false);
   const [menu, setMenu] = useState<Project | null>(null);
   const [agentMenu, setAgentMenu] = useState<{ p: Project; a: ProjectAgent } | null>(null);
   const [edit, setEdit] = useState<{ p: Project; a: ProjectAgent } | null>(null);
@@ -112,7 +115,7 @@ export default function Projects({ params }: { params: URLSearchParams }) {
   useEffect(() => {
     if (!add || !info) return;
     navigate('projects', undefined, true);
-    setForm({ mode: 'existing', name: add.split('/').filter(Boolean).pop() ?? '', path: add, agents: installed.slice(0, 1), start: true, pathTouched: true });
+    setForm({ name: basename(add), path: add, agents: installed.slice(0, 1), start: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [add, info === null]);
 
@@ -176,7 +179,11 @@ export default function Projects({ params }: { params: URLSearchParams }) {
 
   const tilde = (p: string) => (p === info.home ? '~' : p.startsWith(`${info.home}/`) ? `~${p.slice(info.home.length)}` : p);
   const title = (a: AgentId) => info.agents[a].title;
-  const openForm = (mode: Form['mode']) => setForm({ mode, name: '', path: '~/', agents: installed.slice(0, 1), start: true, pathTouched: false });
+  const picked = (path: string) => {
+    setPicking(false);
+    // Ad elle değiştirilmediyse klasör adından gelir
+    setForm((f) => (f ? { ...f, path, name: !f.name || f.name === basename(f.path) ? basename(path) : f.name } : { name: basename(path), path, agents: installed.slice(0, 1), start: true }));
+  };
   const agentUrl = (p: Project, a: AgentId) => `/api/projects/${p.id}/agents/${a}`;
   const openCli = (p: Project, a: AgentId) => {
     lsSet(`tp-cli-opened-${p.id}-${a}`, '1');
@@ -187,7 +194,7 @@ export default function Projects({ params }: { params: URLSearchParams }) {
     if (!form) return;
     setBusy('form');
     try {
-      const r = await post<{ errors: string[] }>('/api/projects', { name: form.name, path: form.path, create: form.mode === 'new', agents: form.agents, start: form.start });
+      const r = await post<{ errors: string[] }>('/api/projects', { name: form.name, path: form.path, create: false, agents: form.agents, start: form.start });
       setForm(null);
       if (r.errors.length) toast(`Proje eklendi, ama başlatılamadı: ${r.errors.join(' · ')}`, 'err');
       else toast(form.start ? 'Proje eklendi, başlatıldı' : 'Proje eklendi', 'ok');
@@ -243,18 +250,15 @@ export default function Projects({ params }: { params: URLSearchParams }) {
         )}
 
         <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-          <button className="btn btn-primary" onClick={() => openForm('new')}>
-            <Icon name="folder-plus" size={18} /> Yeni proje
-          </button>
-          <button className="btn" onClick={() => openForm('existing')}>
-            <Icon name="folder" size={18} /> Var olan klasör
+          <button className="btn btn-primary" onClick={() => setPicking(true)}>
+            <Icon name="folder-plus" size={18} /> Proje ekle
           </button>
         </div>
 
         {info.projects.length === 0 ? (
           <Empty icon="folder" title="Henüz proje yok">
             Her proje Termux'ta bir klasördür. İçinde Claude Code, Antigravity ya da ikisi birden ayrı uzaktan kontrol oturumlarıyla çalışır; ajan yalnızca o
-            klasörü görür. Dosyalar sayfasında bir klasörün menüsündeki <b>Proje yap</b> ile de ekleyebilirsin.
+            klasörü görür. <b>Proje ekle</b> ile klasörünü seç ya da orada yeni klasör oluştur. Dosyalar sayfasında bir klasörün menüsündeki <b>Proje yap</b> da aynı işi görür.
           </Empty>
         ) : (
           info.projects.map((p) => {
@@ -313,51 +317,45 @@ export default function Projects({ params }: { params: URLSearchParams }) {
         )}
       </div>
 
-      {/* Proje ekle */}
+      {/* Proje ekle: önce klasör seçilir (gerekirse orada oluşturulur), sonra ad ve ajanlar */}
+      <FolderPicker
+        open={picking}
+        start={form?.path ?? '~'}
+        title={form ? 'Proje klasörünü değiştir' : 'Proje klasörü seç'}
+        reject={rejectDir}
+        onPick={picked}
+        onClose={() => setPicking(false)}
+      />
       <Sheet
-        open={form !== null}
+        open={form !== null && !picking}
         onClose={() => setForm(null)}
-        title={form?.mode === 'new' ? 'Yeni proje' : 'Var olan klasörü ekle'}
+        title="Proje ekle"
         footer={
-          <button
-            className="btn btn-primary"
-            style={{ width: '100%' }}
-            disabled={busy !== null || !form?.path.trim() || !form.agents.length || (form.mode === 'new' && !form.name.trim())}
-            onClick={submit}
-          >
-            <Icon name="plus" size={18} /> {form?.mode === 'new' ? 'Oluştur' : 'Ekle'}
+          <button className="btn btn-primary" style={{ width: '100%' }} disabled={busy !== null || !form?.agents.length || !form.name.trim()} onClick={submit}>
+            <Icon name="plus" size={18} /> Ekle
           </button>
         }
       >
         {form && (
           <div className="stack">
             <div>
-              <label className="field-label">Proje adı</label>
-              <input
-                className="input"
-                value={form.name}
-                autoFocus
-                placeholder="ör. blog"
-                onChange={(e) => {
-                  const name = e.target.value;
-                  // Yeni projede klasör, elle değiştirilmediyse addan türetilir
-                  setForm({ ...form, name, path: form.mode === 'new' && !form.pathTouched ? `~/${slugify(name)}` : form.path });
-                }}
-              />
+              <label className="field-label">Klasör</label>
+              <button className="btn" style={{ width: '100%', justifyContent: 'flex-start', overflow: 'hidden' }} onClick={() => setPicking(true)}>
+                <Icon name="folder" size={18} />
+                <span className="mono" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, flex: 1, textAlign: 'left' }}>
+                  {tilde(form.path)}
+                </span>
+                <span className="faint" style={{ fontSize: 12.5 }}>
+                  Değiştir
+                </span>
+              </button>
+              <div className="faint" style={{ fontSize: 12.5, marginTop: 6 }}>
+                Ajan yalnızca bu klasörde çalışır.
+              </div>
             </div>
             <div>
-              <label className="field-label">{form.mode === 'new' ? 'Oluşturulacak klasör' : 'Klasör'}</label>
-              <input
-                className="input mono"
-                value={form.path}
-                placeholder="~/proje"
-                autoCapitalize="off"
-                spellCheck={false}
-                onChange={(e) => setForm({ ...form, path: e.target.value, pathTouched: true })}
-              />
-              <div className="faint" style={{ fontSize: 12.5, marginTop: 6 }}>
-                Ajan yalnızca bu klasörde çalışır. Home klasörünün kendisi proje olamaz.
-              </div>
+              <label className="field-label">Proje adı</label>
+              <input className="input" value={form.name} placeholder="ör. blog" onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </div>
             <div>
               <label className="field-label">Ajanlar</label>

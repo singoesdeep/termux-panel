@@ -24,31 +24,50 @@ Varsayılan olarak yalnızca `127.0.0.1` adresini dinler ve token ile giriş ist
 | **Projeler** | Her proje klasöründe Claude Code (`claude rc`) ve/veya Antigravity (`agy --remote-control`) uzaktan kontrol servisi; başlat-durdur, oturum bağlantısı, canlı log |
 | **İşler** | Panelden başlatılan tüm uzun komutlar ve çıktıları |
 
-## Kurulum (sıfırdan Termux)
+## Kurulum
 
-Proje klasörünü Termux'a kopyaladıktan sonra:
+[Termux](https://f-droid.org/packages/com.termux/)'u **F-Droid**'den ya da GitHub'dan kur (Play Store sürümü eski ve güncellenmiyor). Sonra Termux'ta tek komut:
 
 ```bash
-cd ~/termux-panel
-bash scripts/bootstrap.sh            # temel kurulum + paneli başlatır
-bash scripts/bootstrap.sh --hepsi    # + geliştirme araçları ve Claude Code (Termux'a)
+curl -fsSL https://raw.githubusercontent.com/singoesdeep/termux-panel/main/scripts/install.sh | bash
+```
+
+Betiğin yaptıkları:
+- Termux paketlerini günceller, Node.js'i ve gerekli araçları kurar.
+- Panelin hazır derlenmiş son sürümünü [Releases](https://github.com/singoesdeep/termux-panel/releases)'tan indirir; telefonda derleme yapılmaz.
+- Paneli `termux-services` ile servis olarak kurup başlatır. Termux'u yeniden başlatman gerekmez; Termux her açıldığında panel kendiliğinden başlar.
+- Giriş bağlantısını yazdırır, tarayıcıda açar (Termux:API varsa panoya da kopyalar).
+
+Kurulum klasörü `~/termux-panel`. Aynı komutu tekrar çalıştırmak paneli günceller; ayarlar (`~/.termux-panel`) korunur.
+
+Bağlantı tarayıcıda açılmazsa: `http://127.0.0.1:8088` adresine git ve terminalde yazan token'ı gir. Token'ı sonradan görmek için: `grep token ~/.termux-panel/config.json`. Tarayıcı menüsünden **Ana ekrana ekle** dersen panel uygulama gibi tam ekran açılır.
+
+### Sonraki adımlar
+
+Panelde **Menü → Kurulum** sayfası her bileşenin durumunu gösterir ve tek dokunuşla kurar. Yaygın olanlar **Eksikleri kur** ile tek seferde kurulur; bir adım başarısız olursa iş orada durur ve başarısız olarak işaretlenir.
+
+1. **AI araçları:** Claude Code'u, Antigravity CLI'ı ya da ikisini birden kendi düğmesiyle kur. Kurulumdan sonra her birine bir kez terminalde giriş yapman gerekir: **Projeler** sayfasındaki *Terminalde aç* düğmesi `claude` / `agy`'yi açar. Giriş bağlantısı telefonun tarayıcısında açılır; onayladıktan sonra terminale dön.
+2. **Arka plan süreç sınırı (Android 12+):** Android uzun süre çalışan ajan oturumlarını habersizce kapatabilir. Kapatmanın yolu aşağıda ([phantom process killer](#android-12-phantom-process-killer)). **Android 14 ve sonrası:** *Geliştirici seçenekleri → "Alt süreç kısıtlamalarını devre dışı bırak"* anahtarı yeterli, adb gerekmez. Geliştirici seçeneklerini açmak için *Ayarlar → Telefon hakkında → Yapım numarası*'na 7 kez dokun.
+3. **Pil:** *Ayarlar → Uygulamalar → Termux → Pil → Kısıtlanmamış* seç. Yoksa Android Termux'u arka planda uyutabilir.
+4. **Termux:API (isteğe bağlı):** Pil, bildirim, pano, fener gibi *Cihaz* özellikleri için `termux-api` paketiyle birlikte **Termux:API uygulaması** da gerekir. Termux'u nereden kurduysan oradan kur (F-Droid ya da GitHub; ikisi aynı kaynaktan olmalı, yoksa imzalar uyuşmaz). Uygulama olmadan `termux-api` komutları yanıt vermeden bekler.
+5. **Proje ekle:** **Projeler → Proje ekle** ile klasörünü seç ya da orada yeni klasör oluştur, ajanları seç. Antigravity için her yeni projede bir kez kartındaki *Terminalde aç* ile `agy`'yi açıp klasör güven sorusunu yanıtla (Claude'da bu otomatik).
+
+> `node-pty` derlenemezse panel yine çalışır. Terminal, `script` komutuyla (`util-linux`) çalışan yedek moda geçer; bu modda terminal yeniden boyutlandırılamaz. Kurulum sayfasındaki "Yeniden derle" ile tekrar denenebilir.
+
+### Geliştirici kurulumu
+
+Depoyu klonlayıp telefonda derlemek istersen:
+
+```bash
+git clone https://github.com/singoesdeep/termux-panel ~/termux-panel && cd ~/termux-panel
+bash scripts/bootstrap.sh            # bağımlılıklar + derleme + paneli başlatır
+bash scripts/bootstrap.sh --hepsi    # + geliştirme araçları ve Claude Code
 bash scripts/bootstrap.sh --antigravity  # + Antigravity CLI (agy)
 bash scripts/bootstrap.sh --distro   # + isteğe bağlı: proot-distro ve Debian
 bash scripts/bootstrap.sh --servis   # + Termux açılınca panel otomatik başlasın
 ```
 
-Betik Termux paketlerini günceller; Node.js, git ve derleyiciyi kurar (Node zaten kuruluysa dokunmaz); node-pty için gereken ayarı yapar ve paneli başlatır. Terminalde şöyle bir çıktı görürsün:
-
-```
-  Termux Panel çalışıyor → http://127.0.0.1:8088
-  Otomatik giriş bağlantısı: http://127.0.0.1:8088/?token=XXXX
-```
-
-Bağlantıyı telefonun tarayıcısında aç. Tarayıcı menüsünden **Ana ekrana ekle** dersen uygulama gibi tam ekran açılır.
-
-Geri kalan her şey panelde **Menü → Kurulum** sayfasından yapılabilir. Orada her bileşenin durumu görünür: depolama izni, Termux:API, termux-services, node-pty, otomatik başlatma, geliştirme araçları, AI araçları (Claude Code, Antigravity CLI) ve isteğe bağlı olarak proot-distro / Debian. AI araçları toplu kuruluma dahil değildir; istediğini kendi düğmesiyle kurarsın. Bileşenler tek tek ya da **Eksikleri kur** ile tek seferde, canlı çıktıyla kurulur. Toplu kurulumda bir adım başarısız olursa iş orada durur ve başarısız olarak işaretlenir. Kurulum tamamlanmadıysa ana ekranda bir uyarı çıkar.
-
-> `node-pty` derlenemezse panel yine çalışır. Terminal, `script` komutuyla (`pkg install util-linux`) çalışan yedek moda geçer; bu modda terminal yeniden boyutlandırılamaz. Kurulum sayfasındaki "Yeniden derle" ile tekrar denenebilir.
+`~/termux-panel` bir git deposuysa tek satırlık kurulum betiği de hazır sürüm yerine `git pull` + derleme yapar.
 
 ## proot-distro desteği (isteğe bağlı)
 
@@ -90,8 +109,8 @@ Antigravity'nin resmi arka plan servisi (`agy remote-control start`) systemd ist
 
 **Menü → Projeler** sayfasında projeler listelenir. Her proje Termux'ta bir klasördür; içinde Claude Code, Antigravity ya da ikisi birden çalışabilir. Her (proje, ajan) çifti ayrı bir servistir: `claude-rc-<proje>`, `agy-rc-<proje>`. Ajan yalnızca o klasörde çalışır, diğer projelerini görmez.
 
-- **Yeni proje:** Ad ver, klasör (varsayılan `~/<ad>`) oluşturulur, ajanları seç.
-- **Var olan klasör:** Yolunu yaz ya da *Dosyalar*'da klasörün menüsünden **Proje yap**'a dokun.
+- **Proje ekle:** Dosya yöneticisi gibi klasörler arasında gezinip var olan bir klasörü seç ya da bulunduğun yerde **Yeni klasör** oluştur. Sonra adı ve ajanları seç.
+- *Dosyalar* sayfasında bir klasörün menüsündeki **Proje yap** da aynı işi görür.
 - Sonradan projeye diğer ajanı ekleyebilir ya da çıkarabilirsin.
 - Home klasörünün kendisi (ya da onu içeren bir üst klasör) proje olamaz.
 - Claude için klasör güven onayı `~/.claude.json`'da otomatik işaretlenir (yalnızca o klasör için). Antigravity'nin güven ayarının biçimi belgelenmediği için panel ona dokunmaz: servis ilk açılışta güven sorusunda bekler. Her yeni projede bir kez kartındaki **Terminalde aç** ile `agy`'yi açıp soruyu yanıtla.
@@ -121,7 +140,7 @@ adb shell "/system/bin/device_config set_sync_disabled_for_tests persistent; /sy
 bash scripts/install-service.sh
 ```
 
-Betik `termux-services` paketini kurar, gerekirse projeyi derler ve paneli servis olarak ekleyip başlatır. İlk kurulumdan sonra Termux'u bir kez kapatıp açman gerekir. Panel o sırada elle çalışıyorsa (`npm start`), onu kapattığında servis birkaç saniye içinde devralır. Android'in Termux'u uyutmasını önlemek için bildirimden **Acquire wakelock**'a dokun ya da panelde *Cihaz → Wake lock al* seçeneğini kullan. Telefon açılınca otomatik başlasın istiyorsan **Termux:Boot** uygulamasını kullanabilirsin.
+Tek satırlık kurulum bunu zaten yapar. Betik `termux-services` paketini kurar, servis yöneticisini (runsvdir) çalışmıyorsa başlatır (Termux'u yeniden başlatmak gerekmez), gerekirse projeyi derler ve paneli servis olarak ekleyip başlatır; panel zaten servisse yeniden başlatır. Panel o sırada elle çalışıyorsa (`npm start`), onu kapattığında servis birkaç saniye içinde devralır. Android'in Termux'u uyutmasını önlemek için bildirimden **Acquire wakelock**'a dokun ya da panelde *Cihaz → Wake lock al* seçeneğini kullan. Telefon açılınca otomatik başlasın istiyorsan **Termux:Boot** uygulamasını kullanabilirsin.
 
 ## Ayarlar
 
@@ -156,7 +175,10 @@ Token'ı yenilemek için `config.json` içindeki `token` satırını sil ve pane
 npm run dev        # backend (tsx watch, :8088) + Vite (:5173, /api ve /ws proxy)
 npm run typecheck
 npm run build
+npm run pack       # derle + release/termux-panel.tar.gz (hazır sürüm paketi)
 ```
+
+Yeni sürüm yayınlamak: `package.json`'daki sürümü artır, commit'le ve `v<sürüm>` etiketini gönder (`git tag v0.2.0 && git push --tags`). GitHub Actions paneli derleyip paketi Releases'a yükler; kurulum betiği her zaman en son sürümü indirir.
 
 ```
 server/src/

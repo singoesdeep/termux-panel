@@ -146,6 +146,17 @@ export async function agyState(): Promise<{ installed: boolean; version: string 
   return { installed: true, version: agyVersion.version };
 }
 
+/** termux-services'in servis yöneticisi (runsvdir) çalışıyor mu */
+function runsvdirAlive() {
+  try {
+    const pid = Number(fs.readFileSync(path.join(PREFIX, 'var/run/service-daemon.pid'), 'utf8'));
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
 async function buildItems(): Promise<Item[]> {
   const [pkgs, distros, upgradable, phantom] = await Promise.all([
     termuxInstalled(),
@@ -158,6 +169,7 @@ async function buildItems(): Promise<Item[]> {
   const distro = distros.find((d) => d.name === DEFAULT_DISTRO) ?? distros[0];
   const missingDev = DEV_PKGS.filter((p) => !pkgs.has(p));
   const cc = claudeState();
+  const svDaemon = runsvdirAlive();
   const agy = await agyState();
   const arm64 = os.arch() === 'arm64';
   const serviceDir = path.join(PREFIX, 'var/service/termux-panel');
@@ -197,10 +209,11 @@ async function buildItems(): Promise<Item[]> {
       id: 'termux-services',
       group: 'termux',
       title: 'termux-services',
-      desc: 'Arka plan servisleri (sshd, panelin otomatik başlaması…). Kurulumdan sonra Termux\'u yeniden başlat.',
-      status: pkgs.has('termux-services') ? 'ok' : 'missing',
-      command: `${PKG_INSTALL} termux-services`,
-      actionLabel: 'Kur',
+      desc: 'Arka plan servisleri (panelin otomatik başlaması, AI ajanlarının uzaktan kontrol oturumları, sshd…). Servis yöneticisi Termux yeniden başlatılmadan çalıştırılır.',
+      status: !pkgs.has('termux-services') ? 'missing' : svDaemon ? 'ok' : 'warn',
+      detail: pkgs.has('termux-services') && !svDaemon ? 'Kurulu ama servis yöneticisi (runsvdir) çalışmıyor' : undefined,
+      command: `${pkgs.has('termux-services') ? '' : `${PKG_INSTALL} termux-services && `}SVDIR="$PREFIX/var/service" service-daemon start`,
+      actionLabel: pkgs.has('termux-services') ? 'Başlat' : 'Kur',
       inBulk: true,
     },
     {
