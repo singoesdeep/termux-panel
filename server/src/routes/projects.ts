@@ -21,6 +21,8 @@ import { SVDIR, SV_LOGDIR, sv, svAvailable, svStatus } from './services.js';
 const SH = path.join(PREFIX, 'bin/sh');
 const BASH = path.join(PREFIX, 'bin/bash');
 const CLAUDE_JSON = path.join(HOME, '.claude.json');
+const AGY_DIR = path.join(HOME, '.gemini/antigravity-cli');
+const AGY_SETTINGS = path.join(AGY_DIR, 'settings.json');
 /** Eski sürümün tek servisi */
 const LEGACY = 'claude-rc';
 const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
@@ -58,9 +60,12 @@ const AGENTS: Record<AgentId, AgentDef> = {
     title: 'Antigravity',
     prefix: 'agy-rc',
     defaultCommand: 'agy --remote-control',
-    urlRe: /https:\/\/[a-z0-9.-]*antigravity[a-z0-9.-]*\/[^\s'"<>`)\]]*/g,
-    // Giriş bilgisi sistem anahtarlığında tutuluyor; Termux'ta nereye yazıldığı belgelenmemiş
-    state: async () => ({ ...(await agyState()), loggedIn: null }),
+    // "Open https://antigravity.google.com/r/<oturum> on another device to take over."
+    urlRe: /https:\/\/antigravity\.google\.com\/r\/[^\s'"<>`)\]]+/g,
+    // D-Bus anahtarlığı olmadığında giriş bilgisi dosyaya yazılıyor
+    state: async () => ({ ...(await agyState()), loggedIn: fs.existsSync(path.join(AGY_DIR, 'antigravity-oauth-token')) }),
+    trust: trustAgy,
+    trusted: trustedAgy,
   },
 };
 const AGENT_IDS = Object.keys(AGENTS) as AgentId[];
@@ -147,13 +152,45 @@ async function trustClaude(dir: string) {
   return true;
 }
 
+// ---- ~/.gemini/antigravity-cli/settings.json: klasör güven onayı (trustedWorkspaces) ----
+
+async function readAgySettings(): Promise<Record<string, unknown> | null> {
+  try {
+    return JSON.parse(await fsp.readFile(AGY_SETTINGS, 'utf8'));
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'ENOENT' ? {} : null;
+  }
+}
+
+async function trustedAgy(): Promise<Set<string>> {
+  const j = await readAgySettings();
+  return new Set(Array.isArray(j?.trustedWorkspaces) ? (j.trustedWorkspaces as unknown[]).map(String) : []);
+}
+
+/** Yalnızca bu klasörü güvenilenlere ekler */
+async function trustAgy(dir: string) {
+  const j = await readAgySettings();
+  if (!j) return false;
+  const list = Array.isArray(j.trustedWorkspaces) ? (j.trustedWorkspaces as unknown[]).map(String) : [];
+  if (list.includes(dir)) return true;
+  j.trustedWorkspaces = [...list, dir];
+  await fsp.mkdir(AGY_DIR, { recursive: true });
+  const tmp = `${AGY_SETTINGS}.tp-${process.pid}`;
+  await fsp.writeFile(tmp, `${JSON.stringify(j, null, 2)}\n`, { mode: 0o600 });
+  await fsp.rename(tmp, AGY_SETTINGS);
+  return true;
+}
+
 // ---- runit servisi ----
 
 /** runit'in çalıştıracağı betik: proje klasörüne gir, (isteğe bağlı) sahte TTY ile komutu çalıştır. */
 function runScript(p: Project, c: AgentConf) {
   // stdin /dev/null: script çocuk bitene kadar bekler ve onun çıkış koduyla çıkar
   // (boru ya da hiç kapanmayan stdin ile script çocuk bitse de takılı kalıyor)
-  const run = c.tty ? `exec script -qfec ${shq(c.command)} /dev/null </dev/null` : `exec ${c.command} </dev/null`;
+  // Terminal arayüzleri (agy) 0x0 boyutlu pty'de hiçbir şey çizmiyor; geniş tutmak oturum
+  // bağlantısının tek satırda (bölünmeden) loga düşmesini de sağlar
+  const inner = `stty cols 200 rows 50 2>/dev/null; ${c.command}`;
+  const run = c.tty ? `exec script -qfec ${shq(inner)} /dev/null </dev/null` : `exec ${c.command} </dev/null`;
   // Giriş kabuğu (~/.profile'daki değişkenler için) PATH'i değiştirebilir; sonra yeniden ayarlanır.
   // ~/.local/bin: claude kendi "native" kurulum yolunu PATH'te arar
   const cmd = `export PATH="${PREFIX}/bin:$PATH:$HOME/.local/bin"; ${run}`;
@@ -277,7 +314,6 @@ async function projectInfo(p: Project, available: boolean, trusted: Partial<Reco
         agent: a,
         ...p.agents[a]!,
         service: name,
-        // null: bu ajan için güven onayı otomatik verilemiyor
         trusted: trusted[a] ? trusted[a]!.has(p.path) : null,
         status,
         url: status?.state === 'run' ? (urls[0] ?? null) : null,
@@ -308,6 +344,10 @@ const saveProject = (p: Project) => updateConfig({ projects: config.projects.map
 
 export default async function projectRoutes(app: FastifyInstance) {
   migrateLegacyConfig();
+  // Panel güncellendiyse servis betikleri de güncel olsun (çalışanlar bir sonraki başlatmada kullanır)
+  for (const p of config.projects)
+    for (const a of AGENT_IDS)
+      if (p.agents[a] && fs.existsSync(path.join(svcDir(svcName(p, a)), 'run'))) await writeService(p, a).catch(() => {});
 
   app.get('/api/projects', async () => {
     const [available, phantom] = await Promise.all([svAvailable(), phantomStatus()]);

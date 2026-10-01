@@ -50,7 +50,7 @@ Panelde **Menü → Kurulum** sayfası her bileşenin durumunu gösterir ve tek 
 2. **Arka plan süreç sınırı (Android 12+):** Android uzun süre çalışan ajan oturumlarını habersizce kapatabilir. Kapatmanın yolu aşağıda ([phantom process killer](#android-12-phantom-process-killer)). **Android 14 ve sonrası:** *Geliştirici seçenekleri → "Alt süreç kısıtlamalarını devre dışı bırak"* anahtarı yeterli, adb gerekmez. Geliştirici seçeneklerini açmak için *Ayarlar → Telefon hakkında → Yapım numarası*'na 7 kez dokun.
 3. **Pil:** *Ayarlar → Uygulamalar → Termux → Pil → Kısıtlanmamış* seç. Yoksa Android Termux'u arka planda uyutabilir.
 4. **Termux:API (isteğe bağlı):** Pil, bildirim, pano, fener gibi *Cihaz* özellikleri için `termux-api` paketiyle birlikte **Termux:API uygulaması** da gerekir. Termux'u nereden kurduysan oradan kur (F-Droid ya da GitHub; ikisi aynı kaynaktan olmalı, yoksa imzalar uyuşmaz). Uygulama olmadan `termux-api` komutları yanıt vermeden bekler.
-5. **Proje ekle:** **Projeler → Proje ekle** ile klasörünü seç ya da orada yeni klasör oluştur, ajanları seç. Antigravity için her yeni projede bir kez kartındaki *Terminalde aç* ile `agy`'yi açıp klasör güven sorusunu yanıtla (Claude'da bu otomatik).
+5. **Proje ekle:** **Projeler → Proje ekle** ile klasörünü seç ya da orada yeni klasör oluştur, ajanları seç. Başlatınca kartta oturum bağlantısı çıkar; dokunup tarayıcıda aç.
 
 > `node-pty` derlenemezse panel yine çalışır. Terminal, `script` komutuyla (`util-linux`) çalışan yedek moda geçer; bu modda terminal yeniden boyutlandırılamaz. Kurulum sayfasındaki "Yeniden derle" ile tekrar denenebilir.
 
@@ -103,7 +103,9 @@ bash install.sh
 
 Google'ın terminal ajanı `agy`, [wallentx/antigravity-cli-termux](https://github.com/wallentx/antigravity-cli-termux) derlemesiyle doğrudan Termux'a kurulur (`$PREFIX/bin/agy`, glibc ile çalışır). Kurulum sayfasındaki "Antigravity CLI" adımı önkoşulları (glibc, resolv-conf, gerekirse qemu) kurar, betiği etkileşimsiz çalıştırır ve `agy --version` ile doğrular. Kendini `agy update` ile günceller.
 
-Antigravity'nin resmi arka plan servisi (`agy remote-control start`) systemd ister, Termux'ta yoktur. Panel bunun yerine `agy --remote-control`'ü proje klasöründe runit altında çalıştırır; bağlantı antigravity.google.com panosunda görünür.
+Antigravity'nin resmi arka plan servisi (`agy remote-control start`) systemd ister, Termux'ta yoktur. Panel bunun yerine `agy --remote-control`'ü proje klasöründe runit altında çalıştırır. `agy` ekrana `https://antigravity.google.com/r/<oturum>` bağlantısını basar; panel bunu proje kartında gösterir. antigravity.google.com ana sayfası tek başına bir şey göstermez, oturuma bu bağlantıyla girilir. Mobil uygulama yok (Play Store'daki resmi uygulama şimdilik yalnızca Googlebook OS'ta); telefonda tarayıcıdan kullanılır ve ana ekrana eklenebilir.
+
+Giriş bilgisi D-Bus anahtarlığı olmadığı için `~/.gemini/antigravity-cli/antigravity-oauth-token` dosyasında tutulur; panel giriş yapılıp yapılmadığını buradan anlar.
 
 ## Projeler
 
@@ -113,9 +115,10 @@ Antigravity'nin resmi arka plan servisi (`agy remote-control start`) systemd ist
 - *Dosyalar* sayfasında bir klasörün menüsündeki **Proje yap** da aynı işi görür.
 - Sonradan projeye diğer ajanı ekleyebilir ya da çıkarabilirsin.
 - Home klasörünün kendisi (ya da onu içeren bir üst klasör) proje olamaz.
-- Claude için klasör güven onayı `~/.claude.json`'da otomatik işaretlenir (yalnızca o klasör için). Antigravity'nin güven ayarının biçimi belgelenmediği için panel ona dokunmaz: servis ilk açılışta güven sorusunda bekler. Her yeni projede bir kez kartındaki **Terminalde aç** ile `agy`'yi açıp soruyu yanıtla.
+- Klasör güven onayı ("bu klasöre güveniyor musun?") her iki ajan için otomatik verilir, yalnızca o klasör için: Claude'da `~/.claude.json`, Antigravity'de `~/.gemini/antigravity-cli/settings.json` → `trustedWorkspaces`.
 - Servisler panelden bağımsız çalışır: panel yeniden başlasa da sürer, çökerse 10 sn sonra yeniden başlar, çalışırken `termux-wake-lock` alır. "Termux açılınca başlat" her ajan için ayrı açılıp kapatılır.
-- Oturum bağlantısı logdan okunup kartta gösterilir. Loglar `$PREFIX/var/log/sv/<servis>/` altında.
+- Oturum bağlantısı logdan okunup kartta düğme olarak gösterilir: Claude için `https://claude.ai/…`, Antigravity için `https://antigravity.google.com/r/…`. Dokununca tarayıcıda açılır; aynı Google/Claude hesabıyla giriş yapmış olman yeterli. Loglar `$PREFIX/var/log/sv/<servis>/` altında.
+- Sahte terminal 200×50 boyutla açılır: `agy`'nin arayüzü 0×0 terminalde hiçbir şey çizmiyor, geniş satır da bağlantının bölünmeden loga düşmesini sağlıyor.
 - "Sahte terminal (TTY)" seçeneği komutu `script` ile (`util-linux`) bir pty içinde çalıştırır. Komut ajan ayarlarından değiştirilebilir.
 - Projeyi kaldırmak servisleri siler, klasöre dokunmaz. Eski sürümden kalan tek `claude-rc` servisi varsa sayfa onu kaldırmayı önerir.
 

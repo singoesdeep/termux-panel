@@ -217,17 +217,17 @@ export default function Projects({ params }: { params: URLSearchParams }) {
           </button>
         )}
 
-        {info.agents.claude.installed && info.agents.claude.loggedIn === false && (
-          <div className="callout">
+        {AGENT_IDS.filter((a) => info.agents[a].installed && info.agents[a].loggedIn === false).map((a) => (
+          <div key={a} className="callout">
             <Icon name="info" />
             <span>
-              Henüz Claude'a giriş yapılmamış görünüyor. Başlatmadan önce terminalde bir kez <code>claude</code> çalıştırıp giriş yap.{' '}
-              <button className="btn btn-sm" onClick={() => navigate('terminal', { cmd: 'claude' })}>
+              Henüz {title(a)}'e giriş yapılmamış görünüyor. Başlatmadan önce terminalde bir kez <code>{CLI[a]}</code> çalıştırıp giriş yap.{' '}
+              <button className="btn btn-sm" onClick={() => navigate('terminal', { cmd: CLI[a] })}>
                 <Icon name="terminal" size={16} /> Terminalde aç
               </button>
             </span>
           </div>
-        )}
+        ))}
 
         {info.legacy && (
           <div className="callout">
@@ -379,11 +379,6 @@ export default function Projects({ params }: { params: URLSearchParams }) {
                   );
                 })}
               </div>
-              {form.agents.includes('agy') && (
-                <div className="faint" style={{ fontSize: 12.5, marginTop: 6 }}>
-                  Antigravity klasör güven sorusunu kendisi sorar: servis bu soruda bekler, bu yüzden projeyi ekledikten sonra bir kez terminalde aç.
-                </div>
-              )}
             </div>
             <Switch checked={form.start} onChange={(v) => setForm({ ...form, start: v })} label="Hemen başlat (Termux açılınca da başlar)" />
           </div>

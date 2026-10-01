@@ -1,6 +1,6 @@
 {
   "name": "termux-panel",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Termux için mobile-first web yönetim paneli",
   "private": true,
   "type": "module",
